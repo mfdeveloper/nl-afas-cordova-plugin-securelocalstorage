@@ -20,6 +20,7 @@
 
     <!-- Android -->
     <platform name="android">
+        <framework src="com.google.code.gson:gson:2.8.2" />
         <source-file src="src/android/nl/afas/cordova/plugin/secureLocalStorage/SecureLocalStorage.java" target-dir="src/nl/afas/cordova/plugin/secureLocalStorage" />
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="SecureLocalStorage">

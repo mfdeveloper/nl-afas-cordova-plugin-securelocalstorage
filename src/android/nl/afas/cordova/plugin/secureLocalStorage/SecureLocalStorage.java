@@ -29,9 +29,9 @@ import android.os.Build;
 import android.security.KeyPairGeneratorSpec;
 import android.util.Log;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.JsonIOException;
+import com.google.gson.JsonSyntaxException;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -95,7 +95,7 @@ public class SecureLocalStorage extends CordovaPlugin {
   }
 
   protected HashMap<String, String> hashMap = new HashMap<>();
-  protected ObjectMapper mapper = new ObjectMapper();
+  protected Gson gson = new Gson();
 
   protected KeyStore keyStore;
   protected Activity activity;
@@ -208,10 +208,10 @@ public class SecureLocalStorage extends CordovaPlugin {
   public boolean setItem(String key, Object pojo) throws SecureLocalStorageException {
 
     try {
-      String json = mapper.writeValueAsString(pojo);
+      String json = gson.toJson(pojo);
 
       return this.setItem(key, json);
-    } catch (JsonProcessingException e) {
+    } catch (JsonIOException e) {
       e.printStackTrace();
     }
 
@@ -257,26 +257,23 @@ public class SecureLocalStorage extends CordovaPlugin {
     return null;
   }
 
-  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws IOException, SecureLocalStorageException {
+  /**
+   * Reference: How to Validate JSON with Jackson JSON
+   * https://stackoverflow.com/questions/10226897/how-to-validate-json-with-jackson-json
+   * @param key
+   * @param pojoClass
+   * @param <T>
+   * @return
+   * @throws IOException
+   * @throws SecureLocalStorageException
+   */
+  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, SecureLocalStorageException {
 
-    boolean valid = false;
     String value = this.getItem(key);
 
     if(value != null && value.length() > 0) {
 
-      try {
-
-        mapper.readTree(value);
-        valid = true;
-      } catch(JsonProcessingException e){
-        throw e;
-      }
-    }
-
-    if (valid) {
-
-      return mapper.readValue(value, pojoClass);
-
+        return gson.fromJson(value, pojoClass);
     }
 
     return null;
@@ -313,7 +310,14 @@ public class SecureLocalStorage extends CordovaPlugin {
     return hashMap.size() > 0 ? hashMap : null;
   }
 
-  public JsonNode getItems() throws IOException, SecureLocalStorageException {
+  /**
+   * Reference: Convert Map to JSON using Jackson
+   * https://stackoverflow.com/questions/29340383/convert-map-to-json-using-jackson
+   * @return
+   * @throws JSONException
+   * @throws SecureLocalStorageException
+   */
+  public JSONObject getItems() throws JSONException, SecureLocalStorageException {
 
     if(!lock.isLocked()) {
       lock.lock();
@@ -331,8 +335,9 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
 
     if (hashMap.size() > 0) {
-      String json = mapper.writeValueAsString(hashMap);
-      return mapper.readTree(json);
+        String json = gson.toJson(hashMap);
+
+        return new JSONObject(json);
     }
 
     return null;
@@ -628,7 +633,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  private void clear(File file, KeyStore keyStore) throws SecureLocalStorageException {
+  public void clear(File file, KeyStore keyStore) throws SecureLocalStorageException {
     if (file.exists()) {
       if (!file.delete()) {
         throw new SecureLocalStorageException("Could not delete storage file");
@@ -640,6 +645,26 @@ public class SecureLocalStorage extends CordovaPlugin {
       }
     } catch (Exception e) {
       throw new SecureLocalStorageException(e.getMessage(), e);
+    }
+  }
+
+  public void clear() throws SecureLocalStorageException {
+    activity = _cordova != null ? _cordova.getActivity() : activity;
+    File file = activity.getBaseContext().getFileStreamPath(SECURELOCALSTORAGEFILE);
+
+    if (keyStore == null) {
+
+      keyStore = initKeyStore();
+    }
+
+    this.clear(file, keyStore);
+
+    try {
+      keyStore = initKeyStore();
+      generateKey(keyStore);
+    }
+    catch(SecureLocalStorageException ex2) {
+
     }
   }
 
