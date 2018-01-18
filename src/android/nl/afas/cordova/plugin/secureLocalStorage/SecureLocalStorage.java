@@ -22,36 +22,35 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 package nl.afas.cordova.plugin.secureLocalStorage;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
+import android.annotation.TargetApi;
+import android.app.Activity;
+import android.content.Context;
+import android.os.Build;
+import android.security.KeyPairGeneratorSpec;
+import android.util.Log;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaInterface;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
-import android.annotation.TargetApi;
-import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.CordovaInterface;
-import org.apache.cordova.CordovaWebView;
-import org.apache.cordova.CallbackContext;
-import android.content.Context;
-
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.math.BigInteger;
-
-import android.os.Build;
-import android.security.KeyPairGeneratorSpec;
-import android.util.Log;
-
-
 import java.security.InvalidKeyException;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
@@ -65,7 +64,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
-
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
@@ -74,11 +73,6 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.security.auth.x500.X500Principal;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.util.concurrent.locks.ReentrantLock;
 
 public class SecureLocalStorage extends CordovaPlugin {
 
@@ -100,6 +94,12 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
+  protected HashMap<String, String> hashMap = new HashMap<>();
+  protected ObjectMapper mapper = new ObjectMapper();
+
+  protected KeyStore keyStore;
+  protected Activity activity;
+
   // encrypted local storage
   private static final String SECURELOCALSTORAGEFILE = "secureLocalStorage.sdat";
   // encrypted key
@@ -110,6 +110,10 @@ public class SecureLocalStorage extends CordovaPlugin {
   private static SecretKey _key = null;
 
   private CordovaInterface _cordova;
+
+  public SecureLocalStorage(Activity activity) {
+    this.activity = activity;
+  }
 
   @Override
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -147,6 +151,268 @@ public class SecureLocalStorage extends CordovaPlugin {
     return true;
   }
 
+  public void initEncryptStorage() throws SecureLocalStorageException {
+
+    if (keyStore == null) {
+
+      keyStore = initKeyStore();
+    }
+
+    activity = _cordova != null ? _cordova.getActivity() : activity;
+    File file = activity.getBaseContext().getFileStreamPath(SECURELOCALSTORAGEFILE);
+
+    if (!file.exists()) {
+      // generate key and store in keyStore
+      generateKey(keyStore);
+
+      writeAndEncryptStorage(keyStore, hashMap);
+    }
+
+    // read current storage hashmap
+    hashMap = readAndDecryptStorage(keyStore);
+
+  }
+
+  public boolean setItem(String key, String value) throws SecureLocalStorageException {
+
+    if (key == null || key.length() == 0) {
+      throw new SecureLocalStorageException("Key is empty or null");
+    }
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try {
+
+      this.initEncryptStorage();
+
+      if (value == null) {
+        throw new SecureLocalStorageException("Value is null");
+      }
+
+      hashMap.put(key, value);
+
+      // store back
+      writeAndEncryptStorage(keyStore, hashMap);
+
+    } finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+      return true;
+    }
+
+  }
+
+  public boolean setItem(String key, Object pojo) throws SecureLocalStorageException {
+
+    try {
+      String json = mapper.writeValueAsString(pojo);
+
+      return this.setItem(key, json);
+    } catch (JsonProcessingException e) {
+      e.printStackTrace();
+    }
+
+    return false;
+
+  }
+
+  public void setItem(String key, String value, CallbackContext callbackContext) throws SecureLocalStorageException {
+
+    this.setItem(key, value);
+
+    if (_cordova != null && callbackContext != null) {
+
+      PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
+      pluginResult.setKeepCallback(false);
+      callbackContext.sendPluginResult(pluginResult);
+    }
+  }
+
+  public String getItem(String key) throws SecureLocalStorageException {
+
+    if (key == null || key.length() == 0) {
+      throw new SecureLocalStorageException("Key is empty or null");
+    }
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try{
+
+      this.initEncryptStorage();
+
+      if (hashMap.containsKey(key)) {
+        return hashMap.get(key);
+      }
+    } finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    return null;
+  }
+
+  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws IOException, SecureLocalStorageException {
+
+    boolean valid = false;
+    String value = this.getItem(key);
+
+    if(value != null && value.length() > 0) {
+
+      try {
+
+        mapper.readTree(value);
+        valid = true;
+      } catch(JsonProcessingException e){
+        throw e;
+      }
+    }
+
+    if (valid) {
+
+      return mapper.readValue(value, pojoClass);
+
+    }
+
+    return null;
+  }
+
+  public void getItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
+    String value = this.getItem(key);
+
+      if (callbackContext != null && value != null) {
+
+        PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, value);
+        pluginResult.setKeepCallback(false);
+        callbackContext.sendPluginResult(pluginResult);
+      }
+  }
+
+  public HashMap<String, String> getRawItems() throws SecureLocalStorageException {
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try{
+
+      if (hashMap.size() == 0) {
+        this.initEncryptStorage();
+      }
+    }finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    return hashMap.size() > 0 ? hashMap : null;
+  }
+
+  public JsonNode getItems() throws IOException, SecureLocalStorageException {
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try{
+
+      if (hashMap.size() == 0) {
+        this.initEncryptStorage();
+      }
+    }finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    if (hashMap.size() > 0) {
+      String json = mapper.writeValueAsString(hashMap);
+      return mapper.readTree(json);
+    }
+
+    return null;
+  }
+
+  public boolean removeItem(String key) throws SecureLocalStorageException {
+
+    if (key == null || key.length() == 0) {
+      throw new SecureLocalStorageException("Key is empty or null");
+    }
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try {
+
+      this.initEncryptStorage();
+
+      hashMap.remove(key);
+
+      // store back
+      writeAndEncryptStorage(keyStore, hashMap);
+    } finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    return !hashMap.containsKey(key);
+  }
+
+  public void removeItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
+    boolean result = this.removeItem(key);
+
+    PluginResult pluginResult = new PluginResult(result? PluginResult.Status.OK : PluginResult.Status.ERROR);
+    pluginResult.setKeepCallback(false);
+    callbackContext.sendPluginResult(pluginResult);
+  }
+
+  public boolean containsItem(String key) throws SecureLocalStorageException {
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try{
+
+      if (hashMap.size() == 0) {
+        this.initEncryptStorage();
+      }
+    }finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    return hashMap.size() > 0 && hashMap.containsKey(key);
+  }
+
+  public boolean isEmpty() throws SecureLocalStorageException {
+
+    if(!lock.isLocked()) {
+      lock.lock();
+    }
+
+    try{
+
+      if (hashMap.size() == 0) {
+        this.initEncryptStorage();
+      }
+    }finally {
+      if(lock.isLocked()) {
+        lock.unlock();
+      }
+    }
+
+    return hashMap.size() == 0;
+  }
+
   private void handleException(Exception ex, CallbackContext callbackContext) {
 
     Log.e("SecureLocalStorage", "exception", ex);
@@ -171,13 +437,15 @@ public class SecureLocalStorage extends CordovaPlugin {
       throw new SecureLocalStorageException("Invalid API Level (must be >= 18");
     }
 
-    File file = _cordova.getActivity().getBaseContext().getFileStreamPath(SECURELOCALSTORAGEFILE);
-    HashMap<String, String> hashMap = new HashMap<String, String>();
+    activity = _cordova != null ? _cordova.getActivity() : activity;
+    File file = activity.getBaseContext().getFileStreamPath(SECURELOCALSTORAGEFILE);
+//    HashMap<String, String> hashMap = new HashMap<String, String>();
 
     // lock the access
     lock.lock();
     try {
-      KeyStore keyStore = initKeyStore();
+//      KeyStore keyStore = initKeyStore();
+        keyStore = initKeyStore();
 
       // clear just deletes the storage file
       if (actionId == ActionId.ACTION_CLEAR) {
@@ -234,65 +502,70 @@ public class SecureLocalStorage extends CordovaPlugin {
           callbackContext.sendPluginResult(pluginResult);
         } else {
           // initialize for reading later
-          if (!file.exists()) {
-            // generate key and store in keyStore
-            generateKey(keyStore);
-
-            writeAndEncryptStorage(keyStore, hashMap);
-          }
-
-          // read current storage hashmap
-          hashMap = readAndDecryptStorage(keyStore);
+//          if (!file.exists()) {
+//            // generate key and store in keyStore
+//            generateKey(keyStore);
+//
+//            writeAndEncryptStorage(keyStore, hashMap);
+//          }
+//
+//          // read current storage hashmap
+//          hashMap = readAndDecryptStorage(keyStore);
 
           String key = args.getString(0);
 
-          if (key == null || key.length() == 0) {
-            throw new SecureLocalStorageException("Key is empty or null");
-          }
+//          if (key == null || key.length() == 0) {
+//            throw new SecureLocalStorageException("Key is empty or null");
+//          }
           // handle the methods. Note: getItem uses callback
           if (actionId == ActionId.ACTION_GETITEM) {
 
+              this.getItem(key, callbackContext);
 
-            if (hashMap.containsKey(key)) {
-              if (callbackContext != null) {
-                String value = hashMap.get(key);
-
-                PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, value);
-                pluginResult.setKeepCallback(false);
-                callbackContext.sendPluginResult(pluginResult);
-              }
-            } else {
-              // return null when not found
-              PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, (String)null);
-              pluginResult.setKeepCallback(false);
-              callbackContext.sendPluginResult(pluginResult);
-            }
+//            if (hashMap.containsKey(key)) {
+//              if (callbackContext != null) {
+//                String value = hashMap.get(key);
+//
+//                PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, value);
+//                pluginResult.setKeepCallback(false);
+//                callbackContext.sendPluginResult(pluginResult);
+//              }
+//            } else {
+//              // return null when not found
+//              PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, (String)null);
+//              pluginResult.setKeepCallback(false);
+//              callbackContext.sendPluginResult(pluginResult);
+//            }
           } else if (actionId == ActionId.ACTION_SETITEM) {
 
             String value = args.getString(1);
-            if (value == null) {
-              throw new SecureLocalStorageException("Value is null");
-            }
+            this.setItem(key, value, callbackContext);
 
-            hashMap.put(key, value);
-
-            // store back
-            writeAndEncryptStorage(keyStore, hashMap);
-
-            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
-            pluginResult.setKeepCallback(false);
-            callbackContext.sendPluginResult(pluginResult);
+//            String value = args.getString(1);
+//            if (value == null) {
+//              throw new SecureLocalStorageException("Value is null");
+//            }
+//
+//            hashMap.put(key, value);
+//
+//            // store back
+//            writeAndEncryptStorage(keyStore, hashMap);
+//
+//            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
+//            pluginResult.setKeepCallback(false);
+//            callbackContext.sendPluginResult(pluginResult);
 
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
-            hashMap.remove(key);
-
-            // store back
-            writeAndEncryptStorage(keyStore, hashMap);
-
-            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
-            pluginResult.setKeepCallback(false);
-            callbackContext.sendPluginResult(pluginResult);
+              this.removeItem(key, callbackContext);
+//            hashMap.remove(key);
+//
+//            // store back
+//            writeAndEncryptStorage(keyStore, hashMap);
+//
+//            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
+//            pluginResult.setKeepCallback(false);
+//            callbackContext.sendPluginResult(pluginResult);
           }
         }
       }
@@ -334,9 +607,10 @@ public class SecureLocalStorage extends CordovaPlugin {
         Calendar end = Calendar.getInstance();
         end.add(Calendar.YEAR, 3);
 
-        KeyPairGeneratorSpec spec = new KeyPairGeneratorSpec.Builder(_cordova.getActivity())
+        activity = _cordova != null ? _cordova.getActivity() : activity;
+        KeyPairGeneratorSpec spec = new KeyPairGeneratorSpec.Builder(activity)
           .setAlias(SECURELOCALSTORAGEALIAS)
-          .setSubject(new X500Principal(String.format("CN=%s, O=%s", "SecureLocalStorage", _cordova.getActivity().getBaseContext().getPackageName())))
+          .setSubject(new X500Principal(String.format("CN=%s, O=%s", "SecureLocalStorage", activity.getBaseContext().getPackageName())))
           .setSerialNumber(BigInteger.ONE)
           .setStartDate(start.getTime())
           .setEndDate(end.getTime())
@@ -397,7 +671,8 @@ public class SecureLocalStorage extends CordovaPlugin {
 
     SecretKey key;
 
-    FileInputStream fis = _cordova.getActivity().openFileInput(SECURELOCALSTORAGEKEY);
+    activity = _cordova != null ? _cordova.getActivity() : activity;
+    FileInputStream fis = activity.openFileInput(SECURELOCALSTORAGEKEY);
     try {
 
       Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding");
@@ -451,7 +726,8 @@ public class SecureLocalStorage extends CordovaPlugin {
       Cipher input = Cipher.getInstance("RSA/ECB/PKCS1Padding");
       input.init(Cipher.ENCRYPT_MODE, privateKeyEntry.getCertificate().getPublicKey());
 
-      FileOutputStream fos = _cordova.getActivity().openFileOutput(SECURELOCALSTORAGEKEY, Context.MODE_PRIVATE);
+      activity = _cordova != null ? _cordova.getActivity() : activity;
+      FileOutputStream fos = activity.openFileOutput(SECURELOCALSTORAGEKEY, Context.MODE_PRIVATE);
       try {
         CipherOutputStream cipherOutputStream = new CipherOutputStream(
           fos, input);
@@ -479,7 +755,8 @@ public class SecureLocalStorage extends CordovaPlugin {
       // obtain encrypted key
       SecretKey key = getSecretKey(keyStore);
 
-      FileInputStream fis = _cordova.getActivity().openFileInput(SECURELOCALSTORAGEFILE);
+      activity = _cordova != null ? _cordova.getActivity() : activity;
+      FileInputStream fis = activity.openFileInput(SECURELOCALSTORAGEFILE);
       ArrayList<Byte> values = new ArrayList<Byte>();
       try {
 
@@ -547,7 +824,8 @@ public class SecureLocalStorage extends CordovaPlugin {
       input.init(Cipher.ENCRYPT_MODE, key);
 
       // encrypt the hashmap
-      FileOutputStream fos = _cordova.getActivity().openFileOutput(SECURELOCALSTORAGEFILE, Context.MODE_PRIVATE);
+      activity = _cordova != null ? _cordova.getActivity() : activity;
+      FileOutputStream fos = activity.openFileOutput(SECURELOCALSTORAGEFILE, Context.MODE_PRIVATE);
       try {
         CipherOutputStream cipherOutputStream = new CipherOutputStream(
           fos, input);
