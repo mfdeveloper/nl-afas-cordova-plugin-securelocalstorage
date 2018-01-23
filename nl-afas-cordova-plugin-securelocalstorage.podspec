@@ -8,8 +8,8 @@
 
 Pod::Spec.new do |s|
   s.name             = 'nl-afas-cordova-plugin-securelocalstorage'
-  s.version          = '0.1.14'
-  s.summary          = 'This plugin will store local data encrypted using the IOS keychain'
+  s.version          = '0.0.1'
+  s.summary          = 'This plugin will store local data encrypted using the IOS keychain from original repo version tag 0.1.14'
 
 # This description is used to generate tags and improve search results.
 #   * Think: What does it do? Why did you write it? What is the focus?
