@@ -94,7 +94,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  protected HashMap<String, String> hashMap = new HashMap<>();
+  protected HashMap<String, String> hashMap = new HashMap<String, String>();
   protected Gson gson = new Gson();
 
   protected KeyStore keyStore;
@@ -110,6 +110,8 @@ public class SecureLocalStorage extends CordovaPlugin {
   private static SecretKey _key = null;
 
   private CordovaInterface _cordova;
+
+  public SecureLocalStorage() {}
 
   public SecureLocalStorage(Activity activity) {
     this.activity = activity;
@@ -872,29 +874,3 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

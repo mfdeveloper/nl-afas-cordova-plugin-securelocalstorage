@@ -7,7 +7,7 @@
 
     <dependency
       id="es6-promise-plugin"
-      url="https://github.com/vstirbu/PromisesPlugin.git">
+      version="4.2.2">
     </dependency>
   
     <engines>
