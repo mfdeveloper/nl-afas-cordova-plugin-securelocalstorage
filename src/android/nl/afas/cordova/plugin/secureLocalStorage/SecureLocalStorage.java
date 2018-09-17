@@ -199,7 +199,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       writeAndEncryptStorage(keyStore, hashMap);
 
     } finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
       return true;
@@ -251,7 +251,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         return hashMap.get(key);
       }
     } finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -304,7 +304,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         this.initEncryptStorage();
       }
     }finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -331,7 +331,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         this.initEncryptStorage();
       }
     }finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -364,7 +364,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       // store back
       writeAndEncryptStorage(keyStore, hashMap);
     } finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -392,7 +392,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         this.initEncryptStorage();
       }
     }finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -402,7 +402,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   public boolean isEmpty() throws SecureLocalStorageException {
 
-    if(!lock.isLocked()) {
+    if(!lock.isLocked() && lock.isHeldByCurrentThread()) {
       lock.lock();
     }
 
@@ -412,7 +412,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         this.initEncryptStorage();
       }
     }finally {
-      if(lock.isLocked()) {
+      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
@@ -426,6 +426,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
     PluginResult pluginResult;
     JSONObject error = new JSONObject();
+
     try {
       error.put("message", ex.getMessage());
       error.put("trace", Log.getStackTraceString(ex));
@@ -440,19 +441,19 @@ public class SecureLocalStorage extends CordovaPlugin {
   }
 
   private void handleAction(ActionId actionId, JSONArray args, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
+
     if (Build.VERSION.SDK_INT < 18) {
       throw new SecureLocalStorageException("Invalid API Level (must be >= 18");
     }
 
     activity = _cordova != null ? _cordova.getActivity() : activity;
     File file = activity.getBaseContext().getFileStreamPath(SECURELOCALSTORAGEFILE);
-//    HashMap<String, String> hashMap = new HashMap<String, String>();
 
     // lock the access
     lock.lock();
     try {
-//      KeyStore keyStore = initKeyStore();
-        keyStore = initKeyStore();
+
+      keyStore = initKeyStore();
 
       // clear just deletes the storage file
       if (actionId == ActionId.ACTION_CLEAR) {
@@ -508,77 +509,29 @@ public class SecureLocalStorage extends CordovaPlugin {
           pluginResult.setKeepCallback(false);
           callbackContext.sendPluginResult(pluginResult);
         } else {
-          // initialize for reading later
-//          if (!file.exists()) {
-//            // generate key and store in keyStore
-//            generateKey(keyStore);
-//
-//            writeAndEncryptStorage(keyStore, hashMap);
-//          }
-//
-//          // read current storage hashmap
-//          hashMap = readAndDecryptStorage(keyStore);
 
           String key = args.getString(0);
 
-//          if (key == null || key.length() == 0) {
-//            throw new SecureLocalStorageException("Key is empty or null");
-//          }
-          // handle the methods. Note: getItem uses callback
           if (actionId == ActionId.ACTION_GETITEM) {
 
               this.getItem(key, callbackContext);
 
-//            if (hashMap.containsKey(key)) {
-//              if (callbackContext != null) {
-//                String value = hashMap.get(key);
-//
-//                PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, value);
-//                pluginResult.setKeepCallback(false);
-//                callbackContext.sendPluginResult(pluginResult);
-//              }
-//            } else {
-//              // return null when not found
-//              PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, (String)null);
-//              pluginResult.setKeepCallback(false);
-//              callbackContext.sendPluginResult(pluginResult);
-//            }
           } else if (actionId == ActionId.ACTION_SETITEM) {
 
             String value = args.getString(1);
             this.setItem(key, value, callbackContext);
 
-//            String value = args.getString(1);
-//            if (value == null) {
-//              throw new SecureLocalStorageException("Value is null");
-//            }
-//
-//            hashMap.put(key, value);
-//
-//            // store back
-//            writeAndEncryptStorage(keyStore, hashMap);
-//
-//            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
-//            pluginResult.setKeepCallback(false);
-//            callbackContext.sendPluginResult(pluginResult);
-
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
               this.removeItem(key, callbackContext);
-//            hashMap.remove(key);
-//
-//            // store back
-//            writeAndEncryptStorage(keyStore, hashMap);
-//
-//            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
-//            pluginResult.setKeepCallback(false);
-//            callbackContext.sendPluginResult(pluginResult);
           }
         }
       }
 
     } finally {
-      lock.unlock();
+      if (lock.isLocked() && lock.isHeldByCurrentThread()) {
+        lock.unlock();
+      }
     }
   }
 

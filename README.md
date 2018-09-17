@@ -12,7 +12,7 @@ Use it to store temporary sensitive data which has to survive an app exit/shutdo
 
 Requirements
 -------------
-- Android 4.3 or higher / iOS 6 or higher
+- Android 4.4 (API 19) or higher / iOS 6 or higher
 - Cordova 3.0 or higher
 
     Installation
