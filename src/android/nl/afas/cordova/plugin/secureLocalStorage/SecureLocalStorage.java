@@ -94,7 +94,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  protected HashMap<String, String> hashMap = new HashMap<String, String>();
+  protected HashMap<String, Object> hashMap = new HashMap<String, Object>();
   protected Gson gson = new Gson();
 
   protected KeyStore keyStore;
@@ -142,9 +142,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         try {
           handleAction(actionId, args, callbackContext);
-        } catch (SecureLocalStorageException ex) {
-          handleException(ex, callbackContext);
-        } catch (JSONException ex) {
+        } catch (Exception ex) {
           handleException(ex, callbackContext);
         }
       }
@@ -175,7 +173,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   }
 
-  public boolean setItem(String key, String value) throws SecureLocalStorageException {
+  public boolean setItem(String key, Object value) throws SecureLocalStorageException {
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
@@ -199,64 +197,84 @@ public class SecureLocalStorage extends CordovaPlugin {
       writeAndEncryptStorage(keyStore, hashMap);
 
     } finally {
+
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
+
       return true;
     }
-
   }
 
-  public boolean setItem(String key, Object pojo) throws SecureLocalStorageException {
+  public void setItem(final String key, final Object value, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
 
-    try {
-      String json = gson.toJson(pojo);
+    final Boolean result = this.setItem(key, value);
 
-      return this.setItem(key, json);
-    } catch (JsonIOException e) {
-      e.printStackTrace();
+    if (result && _cordova != null && callbackContext != null) {
+
+      JSONObject success = new JSONObject() {{
+        put("success", result);
+        put("storedValue", value);
+      }};
+
+      callbackContext.success(success);
+
+    } else {
+
+      JSONObject error = new JSONObject() {{
+        put("success", result);
+        put("name", "SetValueException");
+        put("message", String.format("The key=>value '%s=>%' cannot be set", key, value));
+      }};
+
+      callbackContext.error(error);
     }
 
-    return false;
-
   }
 
-  public void setItem(String key, String value, CallbackContext callbackContext) throws SecureLocalStorageException {
+  public Object getItem(String key) throws SecureLocalStorageException, JSONException {
 
-    this.setItem(key, value);
-
-    if (_cordova != null && callbackContext != null) {
-
-      PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
-      pluginResult.setKeepCallback(false);
-      callbackContext.sendPluginResult(pluginResult);
-    }
-  }
-
-  public String getItem(String key) throws SecureLocalStorageException {
+    Object value = null;
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
     }
 
-    if(!lock.isLocked()) {
+    if (!lock.isLocked()) {
       lock.lock();
     }
 
-    try{
+    try {
 
       this.initEncryptStorage();
 
       if (hashMap.containsKey(key)) {
-        return hashMap.get(key);
+
+        value = hashMap.get(key);
+
+        try {
+
+          JSONObject jsonResult = new JSONObject((String) value);
+
+          if (jsonResult.has("nameValuePairs")) {
+            value = jsonResult.getJSONObject("nameValuePairs");
+          }
+        } catch (Exception jsonErr) {
+          jsonErr.printStackTrace();
+          Log.e("SecureStorage", jsonErr.getMessage(), jsonErr);
+        }
       }
+
+    } catch(Exception err) {
+      Log.e("SecureStorage", err.getMessage(), err);
+      throw err;
     } finally {
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
     }
 
-    return null;
+    return value;
   }
 
   /**
@@ -269,30 +287,46 @@ public class SecureLocalStorage extends CordovaPlugin {
    * @throws IOException
    * @throws SecureLocalStorageException
    */
-  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, SecureLocalStorageException {
+  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, JSONException, SecureLocalStorageException {
 
-    String value = this.getItem(key);
+    Object value = this.getItem(key);
+    String valueStr = value.toString();
 
-    if(value != null && value.length() > 0) {
+    if(valueStr != null && valueStr.length() > 0) {
 
-        return gson.fromJson(value, pojoClass);
+      return gson.fromJson(valueStr, pojoClass);
     }
 
     return null;
   }
 
-  public void getItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
-    String value = this.getItem(key);
+  public void getItem(String key, CallbackContext callbackContext) throws JSONException {
 
-      if (callbackContext != null && value != null) {
+    try {
 
-        PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, value);
-        pluginResult.setKeepCallback(false);
-        callbackContext.sendPluginResult(pluginResult);
+      Object value = this.getItem(key);
+
+      if (value instanceof JSONObject ) {
+
+        callbackContext.success((JSONObject) value);
+      } else {
+        callbackContext.success((String) value);
       }
+
+    } catch (final Exception err) {
+
+      JSONObject error = new JSONObject() {{
+        put("success", false);
+        put("name", err.getClass().getName());
+        put("message", err.getMessage());
+      }};
+
+      callbackContext.error(error);
+      return;
+    }
   }
 
-  public HashMap<String, String> getRawItems() throws SecureLocalStorageException {
+  public HashMap<String, Object> getRawItems() throws SecureLocalStorageException {
 
     if(!lock.isLocked()) {
       lock.lock();
@@ -337,9 +371,9 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
 
     if (hashMap.size() > 0) {
-        String json = gson.toJson(hashMap);
+      String json = gson.toJson(hashMap);
 
-        return new JSONObject(json);
+      return new JSONObject(json);
     }
 
     return null;
@@ -428,11 +462,13 @@ public class SecureLocalStorage extends CordovaPlugin {
     JSONObject error = new JSONObject();
 
     try {
+      error.put("success", false);
       error.put("message", ex.getMessage());
       error.put("trace", Log.getStackTraceString(ex));
       pluginResult =new PluginResult(PluginResult.Status.ERROR,error);
     }
     catch(JSONException jsex) {
+      Log.e("SecureStorage", jsex.getMessage(), jsex);
       pluginResult = new PluginResult(PluginResult.Status.ERROR, ex.getMessage());
     }
 
@@ -463,7 +499,8 @@ public class SecureLocalStorage extends CordovaPlugin {
           generateKey(keyStore);
         }
         catch(SecureLocalStorageException ex2) {
-
+          Log.e("SecureStorage", ex2.getMessage(), ex2);
+          throw ex2;
         }
         PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
         pluginResult.setKeepCallback(false);
@@ -501,9 +538,9 @@ public class SecureLocalStorage extends CordovaPlugin {
               generateKey(keyStore);
             }
             catch(SecureLocalStorageException ex2) {
-
+              Log.e("SecureStorage", ex2.getMessage(), ex2);
+              throw ex2;
             }
-
           }
           PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
           pluginResult.setKeepCallback(false);
@@ -514,16 +551,29 @@ public class SecureLocalStorage extends CordovaPlugin {
 
           if (actionId == ActionId.ACTION_GETITEM) {
 
-              this.getItem(key, callbackContext);
+            this.getItem(key, callbackContext);
 
           } else if (actionId == ActionId.ACTION_SETITEM) {
 
-            String value = args.getString(1);
-            this.setItem(key, value, callbackContext);
+
+            Object value = null;
+            try {
+              value = args.getJSONObject(1);
+            } catch (JSONException valueJsonErr) {
+
+              valueJsonErr.printStackTrace();
+              Log.e("SecureStorage", valueJsonErr.getMessage(), valueJsonErr);
+
+              value = args.getString(1);
+            }finally {
+
+              this.setItem(key, value, callbackContext);
+            }
+
 
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
-              this.removeItem(key, callbackContext);
+            this.removeItem(key, callbackContext);
           }
         }
       }
@@ -569,12 +619,12 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         activity = _cordova != null ? _cordova.getActivity() : activity;
         KeyPairGeneratorSpec spec = new KeyPairGeneratorSpec.Builder(activity)
-          .setAlias(SECURELOCALSTORAGEALIAS)
-          .setSubject(new X500Principal(String.format("CN=%s, O=%s", "SecureLocalStorage", activity.getBaseContext().getPackageName())))
-          .setSerialNumber(BigInteger.ONE)
-          .setStartDate(start.getTime())
-          .setEndDate(end.getTime())
-          .build();
+                .setAlias(SECURELOCALSTORAGEALIAS)
+                .setSubject(new X500Principal(String.format("CN=%s, O=%s", "SecureLocalStorage", activity.getBaseContext().getPackageName())))
+                .setSerialNumber(BigInteger.ONE)
+                .setStartDate(start.getTime())
+                .setEndDate(end.getTime())
+                .build();
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", "AndroidKeyStore");
         generator.initialize(spec);
 
@@ -584,6 +634,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       return keyStore;
     }
     catch (Exception e){
+      Log.e("SecureStorage","Could not initialize keyStore", e);
       throw new SecureLocalStorageException("Could not initialize keyStore", e);
     }
   }
@@ -599,6 +650,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         keyStore.deleteEntry(SECURELOCALSTORAGEALIAS);
       }
     } catch (Exception e) {
+      Log.e("SecureStorage",e.getMessage(), e);
       throw new SecureLocalStorageException(e.getMessage(), e);
     }
   }
@@ -619,7 +671,8 @@ public class SecureLocalStorage extends CordovaPlugin {
       generateKey(keyStore);
     }
     catch(SecureLocalStorageException ex2) {
-
+      Log.e("SecureStorage",ex2.getMessage(), ex2);
+      throw ex2;
     }
   }
 
@@ -636,6 +689,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         }
       }
     } catch (Exception e) {
+      Log.e("SecureStorage",e.getMessage(), e);
       throw new SecureLocalStorageException(e.getMessage(), e);
     }
   }
@@ -661,7 +715,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
 
       CipherInputStream cipherInputStream = new CipherInputStream(
-        fis, output);
+              fis, output);
       try {
 
         ObjectInputStream ois = new ObjectInputStream(cipherInputStream);
@@ -684,9 +738,9 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   private void generateKey(KeyStore keyStore) throws SecureLocalStorageException {
 
-  try {
-	  _key = null;
-	  
+    try {
+      _key = null;
+
       SecretKey key = KeyGenerator.getInstance("DES").generateKey();
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       try {
@@ -710,7 +764,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       FileOutputStream fos = activity.openFileOutput(SECURELOCALSTORAGEKEY, Context.MODE_PRIVATE);
       try {
         CipherOutputStream cipherOutputStream = new CipherOutputStream(
-          fos, input);
+                fos, input);
         try {
           cipherOutputStream.write(bos.toByteArray());
         } finally {
@@ -728,7 +782,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
 
   @SuppressWarnings("unchecked")
-  private HashMap<String, String> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
+  private HashMap<String, Object> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
 
 
     try {
@@ -744,7 +798,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         output.init(Cipher.DECRYPT_MODE, key);
 
         CipherInputStream cipherInputStream = new CipherInputStream(
-          fis, output);
+                fis, output);
         try {
 
           int nextByte;
@@ -767,10 +821,10 @@ public class SecureLocalStorage extends CordovaPlugin {
 
 
 
-      HashMap<String,String> hashMap;
+      HashMap<String, Object> hashMap;
       ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
       try {
-        hashMap = (HashMap<String,String>) ois.readObject();
+        hashMap = (HashMap<String, Object>) ois.readObject();
       }
       finally {
         ois.close();
@@ -783,7 +837,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  private void writeAndEncryptStorage(KeyStore keyStore, HashMap<String, String> hashMap) throws SecureLocalStorageException {
+  private void writeAndEncryptStorage(KeyStore keyStore, HashMap<String, Object> hashMap) throws SecureLocalStorageException {
 
     try {
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -808,7 +862,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       FileOutputStream fos = activity.openFileOutput(SECURELOCALSTORAGEFILE, Context.MODE_PRIVATE);
       try {
         CipherOutputStream cipherOutputStream = new CipherOutputStream(
-          fos, input);
+                fos, input);
         try {
           cipherOutputStream.write(bos.toByteArray());
         } finally {
@@ -822,7 +876,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
     }
     catch (Exception e){
-	  Log.e("SecureStorage","Write",e);
+      Log.e("SecureStorage","Write",e);
       throw new SecureLocalStorageException("Error encrypting storage",e);
     }
   }
