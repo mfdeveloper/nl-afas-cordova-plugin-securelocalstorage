@@ -271,10 +271,12 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         try {
 
-          JSONObject jsonResult = new JSONObject((String) value);
+          if (value instanceof String) {
+            JSONObject jsonResult = new JSONObject((String) value);
 
-          if (jsonResult.has("nameValuePairs")) {
-            value = jsonResult.getJSONObject("nameValuePairs");
+            if (jsonResult.has("nameValuePairs")) {
+              value = jsonResult.getJSONObject("nameValuePairs");
+            }
           }
         } catch (Exception jsonErr) {
           jsonErr.printStackTrace();
