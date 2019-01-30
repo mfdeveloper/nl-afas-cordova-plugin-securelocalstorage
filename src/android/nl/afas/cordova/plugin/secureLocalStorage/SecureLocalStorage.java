@@ -82,7 +82,9 @@ public class SecureLocalStorage extends CordovaPlugin {
     ACTION_CLEAR,
     ACTION_GETITEM,
     ACTION_SETITEM,
-    ACTION_REMOVEITEM
+    ACTION_REMOVEITEM,
+    ACTION_REGISTER_LISTENER,
+    ACTION_UNREGISTER_LISTENER
   }
 
   public class SecureLocalStorageException extends Exception{
@@ -99,6 +101,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   protected KeyStore keyStore;
   protected Context context;
+  protected final ArrayList<SecureLocalStorageListener> listeners = new ArrayList<>();
 
   // encrypted local storage
   private static final String SECURELOCALSTORAGEFILE = "secureLocalStorage.sdat";
@@ -217,6 +220,12 @@ public class SecureLocalStorage extends CordovaPlugin {
 
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
+      }
+
+      if (listeners.size() > 0) {
+        for (SecureLocalStorageListener listener: listeners ) {
+          listener.onChange(this, key, value);
+        }
       }
 
       return true;
@@ -420,6 +429,12 @@ public class SecureLocalStorage extends CordovaPlugin {
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
+
+      if (listeners.size() > 0) {
+        for (SecureLocalStorageListener listener: listeners ) {
+          listener.onChange(this, key, null);
+        }
+      }
     }
 
     return !hashMap.containsKey(key);
@@ -471,6 +486,58 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
 
     return hashMap.size() == 0;
+  }
+
+  public void registerListener(final JSONObject listener) throws SecureLocalStorageException {
+
+    if (listener.has("onChange")) {
+
+      listeners.add(new SecureLocalStorageListener() {
+        @Override
+        public void onChange(SecureLocalStorage secureStorage, String key, Object value) {
+            sendJavascript(listener.optString("onChange", ""));
+        }
+      });
+    } else {
+      throw new SecureLocalStorageException("The listener needs a JS callback called 'onChange'");
+    }
+
+  }
+
+  public void registerListener(SecureLocalStorageListener listener) {
+
+    listeners.add(listener);
+
+  }
+
+  public void unregisterListener(SecureLocalStorageListener listener) throws SecureLocalStorageException {
+
+    if (!listeners.contains(listener)) {
+      String msg = "The 'SecureLocalStorageListener' object is not registered. " +
+                   "Please, provide a valid listener object to remove";
+      throw new SecureLocalStorageException(msg);
+    }
+
+    listeners.remove(listener);
+  }
+
+  public void unregisterListener(int index) {
+    listeners.remove(index);
+  }
+
+  @TargetApi(Build.VERSION_CODES.KITKAT)
+  private void sendJavascript(final String javascript) {
+
+    webView.getView().post(new Runnable() {
+      @Override
+      public void run() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+          webView.sendJavascript(javascript);
+        } else {
+          webView.loadUrl("javascript:" + javascript);
+        }
+      }
+    });
   }
 
   private void handleException(Exception ex, CallbackContext callbackContext) {
@@ -593,6 +660,9 @@ public class SecureLocalStorage extends CordovaPlugin {
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
             this.removeItem(key, callbackContext);
+          } else if (actionId == ActionId.ACTION_REGISTER_LISTENER) {
+
+            this.registerListener(args.getJSONObject(0));
           }
         }
       }
@@ -620,6 +690,12 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
     if (action.equals("clearIfInvalid")){
       return ActionId.ACTION_CLEARIFINVALID;
+    }
+    if (action.equals("registerListener")){
+      return ActionId.ACTION_REGISTER_LISTENER;
+    }
+    if (action.equals("unregisterListener")){
+      return ActionId.ACTION_UNREGISTER_LISTENER;
     }
     return ActionId.ACTION_NONE;
   }
@@ -672,6 +748,13 @@ public class SecureLocalStorage extends CordovaPlugin {
     } catch (Exception e) {
       Log.e("SecureStorage",e.getMessage(), e);
       throw new SecureLocalStorageException(e.getMessage(), e);
+    } finally {
+
+      if (listeners.size() > 0) {
+        for (SecureLocalStorageListener listener: listeners ) {
+          listener.onChange(this, null, null);
+        }
+      }
     }
   }
 

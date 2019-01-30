@@ -22,6 +22,7 @@
     <platform name="android">
         <framework src="com.google.code.gson:gson:2.8.2" />
         <source-file src="src/android/nl/afas/cordova/plugin/secureLocalStorage/SecureLocalStorage.java" target-dir="src/nl/afas/cordova/plugin/secureLocalStorage" />
+        <source-file src="src/android/nl/afas/cordova/plugin/secureLocalStorage/SecureLocalStorageListener.java" target-dir="src/nl/afas/cordova/plugin/secureLocalStorage" />
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="SecureLocalStorage">
                 <param name="android-package" value="nl.afas.cordova.plugin.secureLocalStorage.SecureLocalStorage" />
@@ -41,7 +42,7 @@
         </config-file>
         <source-file src="src/ios/SecureLocalStorage.m" />
         <header-file src="src/ios/SecureLocalStorage.h" />
-	<source-file src="src/ios/KeychainItemWrapper.m" />
+	    <source-file src="src/ios/KeychainItemWrapper.m" />
         <header-file src="src/ios/KeychainItemWrapper.h" />
     </platform>
 	
