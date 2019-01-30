@@ -19,7 +19,7 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/  
+*/
 var exec = require('cordova/exec');
 
 function SecureLocalStorage() {
@@ -34,20 +34,19 @@ function SecureLocalStorage() {
 
     function initialized() {
         self.initialized = true;
-        for (var f; f = self.initQueue.shift() ;){
+        for (var f; f = self.initQueue.shift();) {
             f();
         }
     }
 
     // fallback to localStorage on a error(not encrypted local storage)
     // needed for rooted devices..
-    function error()
-    {
+    function error() {
         console.log("falling back to insecure localStorage")
         self.initialized = true;
         self.fallbackActive = true;
 
-        for (var f; f = self.initQueue.shift() ;) {
+        for (var f; f = self.initQueue.shift();) {
             f();
         }
     }
@@ -58,7 +57,7 @@ SecureLocalStorage.prototype.getItem = function (key) {
     var self = this;
     return new Promise(function (resolve, reject) {
         if (self.initialized) {
-            getItem(key,resolve,reject);
+            getItem(key, resolve, reject);
         }
         else {
             self.initQueue.push(function () {
@@ -66,14 +65,12 @@ SecureLocalStorage.prototype.getItem = function (key) {
             });
         }
     });
-    
+
     function getItem(key, resolve, reject) {
-        if(self.fallbackActive)
-        {
+        if (self.fallbackActive) {
             resolve(localStorage.getItem(key));
         }
-        else
-        {
+        else {
             exec(resolve, reject, 'SecureLocalStorage', 'getItem', [key]);
         }
     }
@@ -93,13 +90,11 @@ SecureLocalStorage.prototype.setItem = function (key, value) {
     });
 
     function setItem(key, value, resolve, reject) {
-        if(self.fallbackActive)
-        {
+        if (self.fallbackActive) {
             localStorage.setItem(key, value);
             resolve();
         }
-        else
-        {
+        else {
             exec(resolve, reject, 'SecureLocalStorage', 'setItem', [key, value]);
         }
     }
@@ -107,7 +102,7 @@ SecureLocalStorage.prototype.setItem = function (key, value) {
 
 SecureLocalStorage.prototype.removeItem = function (key) {
     var self = this;
-    return new Promise(function (resolve, reject) {        
+    return new Promise(function (resolve, reject) {
         if (self.initialized) {
             removeItem(key, resolve, reject);
         }
@@ -119,13 +114,11 @@ SecureLocalStorage.prototype.removeItem = function (key) {
     });
 
     function removeItem(key, resolve, reject) {
-        if(self.fallbackActive)
-        {
+        if (self.fallbackActive) {
             localStorage.removeItem(key);
             resolve();
         }
-        else
-        {
+        else {
             exec(resolve, reject, 'SecureLocalStorage', 'removeItem', [key]);
         }
     }
@@ -144,17 +137,32 @@ SecureLocalStorage.prototype.clear = function () {
         }
     });
 
-    function clear(resolve, reject)
-    {
-        if(self.fallbackActive)
-        {
+    function clear(resolve, reject) {
+        if (self.fallbackActive) {
             localStorage.clear();
             resolve();
         }
-        else
-        {
+        else {
             exec(resolve, reject, 'SecureLocalStorage', 'clear', []);
         }
+    }
+};
+
+SecureLocalStorage.prototype.registerListener = function () {
+    var self = this;
+    return new Promise(function (resolve, reject) {
+        if (self.initialized) {
+            registerListener(resolve, reject);
+        }
+        else {
+            self.initQueue.push(function () {
+                registerListener(resolve, reject);
+            });
+        }
+    });
+
+    function registerListener(resolve, reject) {
+        exec(resolve, reject, 'SecureLocalStorage', 'registerListener', []);
     }
 };
 
