@@ -30,7 +30,6 @@ import android.security.KeyPairGeneratorSpec;
 import android.util.Log;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonIOException;
 import com.google.gson.JsonSyntaxException;
 
 import org.apache.cordova.CallbackContext;
@@ -56,7 +55,6 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.UnrecoverableEntryException;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
@@ -101,7 +99,9 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   protected KeyStore keyStore;
   protected Context context;
-  protected final ArrayList<SecureLocalStorageListener> listeners = new ArrayList<>();
+  protected final ArrayList<Object> listeners = new ArrayList<>();
+
+  protected final ArrayList<CallbackContext> listenersCallback = new ArrayList<>();
 
   // encrypted local storage
   private static final String SECURELOCALSTORAGEFILE = "secureLocalStorage.sdat";
@@ -193,7 +193,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return context;
   }
 
-  public boolean setItem(String key, Object value) throws SecureLocalStorageException {
+  public boolean setItem(String key, Object value) throws SecureLocalStorageException, JSONException {
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
@@ -222,11 +222,11 @@ public class SecureLocalStorage extends CordovaPlugin {
         lock.unlock();
       }
 
-      if (listeners.size() > 0) {
-        for (SecureLocalStorageListener listener: listeners ) {
-          listener.onChange(this, key, value);
-        }
-      }
+      JSONObject changedData = new JSONObject();
+      changedData.put("key", key);
+      changedData.put("value", value);
+
+      checkEvents(changedData);
 
       return true;
     }
@@ -407,7 +407,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return null;
   }
 
-  public boolean removeItem(String key) throws SecureLocalStorageException {
+  public boolean removeItem(String key) throws SecureLocalStorageException, JSONException {
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
@@ -430,17 +430,16 @@ public class SecureLocalStorage extends CordovaPlugin {
         lock.unlock();
       }
 
-      if (listeners.size() > 0) {
-        for (SecureLocalStorageListener listener: listeners ) {
-          listener.onChange(this, key, null);
-        }
-      }
+      JSONObject changedData = new JSONObject();
+      changedData.put("key", key);
+
+      checkEvents(changedData);
     }
 
     return !hashMap.containsKey(key);
   }
 
-  public void removeItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
+  public void removeItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
     boolean result = this.removeItem(key);
 
     PluginResult pluginResult = new PluginResult(result? PluginResult.Status.OK : PluginResult.Status.ERROR);
@@ -488,56 +487,49 @@ public class SecureLocalStorage extends CordovaPlugin {
     return hashMap.size() == 0;
   }
 
-  public void registerListener(final JSONObject listener) throws SecureLocalStorageException {
-
-    if (listener.has("onChange")) {
-
-      listeners.add(new SecureLocalStorageListener() {
-        @Override
-        public void onChange(SecureLocalStorage secureStorage, String key, Object value) {
-            sendJavascript(listener.optString("onChange", ""));
-        }
-      });
-    } else {
-      throw new SecureLocalStorageException("The listener needs a JS callback called 'onChange'");
-    }
-
+  public void registerListener(Object listener) {
+    this.listeners.add(listener);
   }
 
-  public void registerListener(SecureLocalStorageListener listener) {
-
-    listeners.add(listener);
-
-  }
-
-  public void unregisterListener(SecureLocalStorageListener listener) throws SecureLocalStorageException {
+  public void unregisterListener(Object listener) throws SecureLocalStorageException {
 
     if (!listeners.contains(listener)) {
       String msg = "The 'SecureLocalStorageListener' object is not registered. " +
-                   "Please, provide a valid listener object to remove";
+              "Please, provide a valid listener object to remove";
       throw new SecureLocalStorageException(msg);
     }
 
     listeners.remove(listener);
   }
 
-  public void unregisterListener(int index) {
-    listeners.remove(index);
+  public void unregisterListener(int index, CallbackContext callbackContext) {
+    Object removedListener = this.unregisterListener(index);
+
+    PluginResult result = new PluginResult(PluginResult.Status.OK, removedListener != null);
+    result.setKeepCallback(true);
+    callbackContext.sendPluginResult(result);
   }
 
-  @TargetApi(Build.VERSION_CODES.KITKAT)
-  private void sendJavascript(final String javascript) {
+  public Object unregisterListener(int index) {
+    return listeners.remove(index);
+  }
 
-    webView.getView().post(new Runnable() {
-      @Override
-      public void run() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-          webView.sendJavascript(javascript);
-        } else {
-          webView.loadUrl("javascript:" + javascript);
+  private void checkEvents(JSONObject changedData) {
+
+    if (listeners.size() > 0) {
+      for (Object listener: listeners ) {
+
+        if (listener instanceof SecureLocalStorageListener) {
+
+          ((SecureLocalStorageListener) listener).onChange(this, changedData.optString("key"), changedData.optString("value"));
+        } else if (listener instanceof CallbackContext) {
+
+          PluginResult result = new PluginResult(PluginResult.Status.OK, changedData);
+          result.setKeepCallback(true);
+          ((CallbackContext) listener).sendPluginResult(result);
         }
       }
-    });
+    }
   }
 
   private void handleException(Exception ex, CallbackContext callbackContext) {
@@ -628,9 +620,19 @@ public class SecureLocalStorage extends CordovaPlugin {
               throw ex2;
             }
           }
+
           PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
           pluginResult.setKeepCallback(false);
           callbackContext.sendPluginResult(pluginResult);
+
+        } else if (actionId == ActionId.ACTION_REGISTER_LISTENER) {
+
+          this.registerListener(callbackContext);
+
+        } else if (actionId == ActionId.ACTION_UNREGISTER_LISTENER) {
+
+          this.unregisterListener(args.getInt(0), callbackContext);
+
         } else {
 
           String key = args.getString(0);
@@ -660,9 +662,6 @@ public class SecureLocalStorage extends CordovaPlugin {
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
             this.removeItem(key, callbackContext);
-          } else if (actionId == ActionId.ACTION_REGISTER_LISTENER) {
-
-            this.registerListener(args.getJSONObject(0));
           }
         }
       }
@@ -750,11 +749,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       throw new SecureLocalStorageException(e.getMessage(), e);
     } finally {
 
-      if (listeners.size() > 0) {
-        for (SecureLocalStorageListener listener: listeners ) {
-          listener.onChange(this, null, null);
-        }
-      }
+      checkEvents(new JSONObject());
     }
   }
 
