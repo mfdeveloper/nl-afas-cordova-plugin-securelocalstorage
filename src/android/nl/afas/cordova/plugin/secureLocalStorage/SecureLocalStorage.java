@@ -111,18 +111,47 @@ public class SecureLocalStorage extends CordovaPlugin {
   private static final String SECURELOCALSTORAGEKEY =  "secureLocalStorage.kdat";
   private static final String SECURELOCALSTORAGEALIAS = "SECURELOCALSTORAGEPPKEYALIAS";
 
+  private static CordovaPlugin instance = null;
+
   private final ReentrantLock lock = new ReentrantLock();
   private static SecretKey _key = null;
 
   private CordovaInterface _cordova;
 
-  public SecureLocalStorage() {}
+  public static synchronized SecureLocalStorage getInstance() {
+    if (instance == null) {
+      instance = new SecureLocalStorage();
+      instance = getPlugin(instance);
+    }
 
-  public SecureLocalStorage(Context context) {
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(Activity activity) {
+    if (instance == null) {
+      instance = new SecureLocalStorage(activity);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(Context context) {
+    if (instance == null) {
+      instance = new SecureLocalStorage(context);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  private SecureLocalStorage() {}
+
+  private SecureLocalStorage(Context context) {
     this.context = context;
   }
 
-  public SecureLocalStorage(Activity activity) {
+  private SecureLocalStorage(Activity activity) {
 
     if (activity != null) {
       this.context = activity.getBaseContext();
@@ -162,6 +191,15 @@ public class SecureLocalStorage extends CordovaPlugin {
     });
 
     return true;
+  }
+
+  public static CordovaPlugin getPlugin(CordovaPlugin plg) {
+    CordovaPlugin plugin = plg.webView.getPluginManager().getPlugin(plg.getServiceName());
+    if (plugin != null) {
+      instance = plugin;
+    }
+
+    return plugin;
   }
 
   public void initEncryptStorage() throws SecureLocalStorageException {
