@@ -79,8 +79,10 @@ public class SecureLocalStorage extends CordovaPlugin {
     ACTION_CLEARIFINVALID,
     ACTION_CLEAR,
     ACTION_GETITEM,
+    ACTION_GETITEMS,
     ACTION_SETITEM,
     ACTION_REMOVEITEM,
+    ACTION_CONTAINS_ITEM,
     ACTION_REGISTER_LISTENER,
     ACTION_UNREGISTER_LISTENER
   }
@@ -193,7 +195,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return context;
   }
 
-  public boolean setItem(String key, Object value) throws SecureLocalStorageException, JSONException {
+  public boolean setItem(String key, Object value) throws SecureLocalStorageException {
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
@@ -222,11 +224,17 @@ public class SecureLocalStorage extends CordovaPlugin {
         lock.unlock();
       }
 
-      JSONObject changedData = new JSONObject();
-      changedData.put("key", key);
-      changedData.put("value", value);
+      try {
 
-      checkEvents(changedData);
+        JSONObject changedData = new JSONObject();
+        changedData.put("key", key);
+        changedData.put("value", value);
+
+        checkEvents(changedData);
+      } catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr.getMessage());
+      }
 
       return true;
     }
@@ -234,7 +242,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   public void setItem(final String key, final Object value, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
 
-    final Boolean result = this.setItem(key, value);
+    final boolean result = this.setItem(key, value);
 
     if (result && _cordova != null && callbackContext != null) {
 
@@ -328,7 +336,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return null;
   }
 
-  public void getItem(String key, CallbackContext callbackContext) throws JSONException {
+  public void getItem(final String key, CallbackContext callbackContext) {
 
     try {
 
@@ -337,19 +345,34 @@ public class SecureLocalStorage extends CordovaPlugin {
       if (value instanceof JSONObject ) {
 
         callbackContext.success((JSONObject) value);
+      } else if (value instanceof JSONArray) {
+        callbackContext.success((JSONArray) value);
+      } else if (value instanceof Integer) {
+        callbackContext.success((Integer) value);
       } else {
         callbackContext.success((String) value);
       }
 
     } catch (final Exception err) {
 
-      JSONObject error = new JSONObject() {{
-        put("success", false);
-        put("name", err.getClass().getName());
-        put("message", err.getMessage());
-      }};
+      try {
 
-      callbackContext.error(error);
+        JSONObject error = new JSONObject() {{
+          put("success", false);
+          put("name", err.getClass().getName());
+          put("key", key);
+          put("message", err.getMessage());
+        }};
+
+        Log.e("SecureLocalStorage", err.getMessage());
+        err.printStackTrace();
+
+        callbackContext.error(error);
+      } catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
+      }
+
       return;
     }
   }
@@ -372,6 +395,32 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
 
     return hashMap.size() > 0 ? hashMap : null;
+  }
+
+  public void getItems(CallbackContext callbackContext) {
+
+    try {
+
+      JSONObject data = this.getItems();
+      callbackContext.success(data);
+
+    } catch (final Exception err) {
+
+      try {
+
+        JSONObject error = new JSONObject() {{
+          put("success", false);
+          put("name", err.getClass().getName());
+          put("message", err.getMessage());
+          put("cause", "Error to retrieve all items from KeyStore");
+        }};
+
+        callbackContext.error(error);
+      } catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
+      }
+    }
   }
 
   /**
@@ -407,7 +456,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return null;
   }
 
-  public boolean removeItem(String key) throws SecureLocalStorageException, JSONException {
+  public boolean removeItem(String key) throws SecureLocalStorageException {
 
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
@@ -426,25 +475,40 @@ public class SecureLocalStorage extends CordovaPlugin {
       // store back
       writeAndEncryptStorage(keyStore, hashMap);
     } finally {
+
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
 
-      JSONObject changedData = new JSONObject();
-      changedData.put("key", key);
+      try {
 
-      checkEvents(changedData);
+        JSONObject changedData = new JSONObject();
+        changedData.put("key", key);
+
+        checkEvents(changedData);
+      }catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
+      }
     }
 
     return !hashMap.containsKey(key);
   }
 
-  public void removeItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
+  public void removeItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
     boolean result = this.removeItem(key);
 
-    PluginResult pluginResult = new PluginResult(result? PluginResult.Status.OK : PluginResult.Status.ERROR);
-    pluginResult.setKeepCallback(false);
-    callbackContext.sendPluginResult(pluginResult);
+    if (result) {
+      callbackContext.success(1);
+    } else {
+      callbackContext.error(0);
+    }
+  }
+
+  public void containsItem(String key, CallbackContext callbackContext) throws SecureLocalStorageException {
+    boolean contains = this.containsItem(key);
+
+    callbackContext.success(contains ? 1 : 0);
   }
 
   public boolean containsItem(String key) throws SecureLocalStorageException {
@@ -571,7 +635,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
       // clear just deletes the storage file
       if (actionId == ActionId.ACTION_CLEAR) {
-        clear(file, keyStore);
+        clear();
         try {
           keyStore = initKeyStore();
           generateKey(keyStore);
@@ -633,6 +697,10 @@ public class SecureLocalStorage extends CordovaPlugin {
 
           this.unregisterListener(args.getInt(0), callbackContext);
 
+        } else if (actionId == ActionId.ACTION_GETITEMS) {
+
+          this.getItems(callbackContext);
+
         } else {
 
           String key = args.getString(0);
@@ -662,6 +730,9 @@ public class SecureLocalStorage extends CordovaPlugin {
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
             this.removeItem(key, callbackContext);
+          } else if (actionId == ActionId.ACTION_CONTAINS_ITEM) {
+
+            this.containsItem(key, callbackContext);
           }
         }
       }
@@ -681,11 +752,17 @@ public class SecureLocalStorage extends CordovaPlugin {
     if (action.equals("getItem")){
       return ActionId.ACTION_GETITEM;
     }
+    if (action.equals("getItems")){
+      return ActionId.ACTION_GETITEMS;
+    }
     if (action.equals("setItem")){
       return ActionId.ACTION_SETITEM;
     }
     if (action.equals("removeItem")){
       return ActionId.ACTION_REMOVEITEM;
+    }
+    if (action.equals("containsItem")){
+      return ActionId.ACTION_CONTAINS_ITEM;
     }
     if (action.equals("clearIfInvalid")){
       return ActionId.ACTION_CLEARIFINVALID;
