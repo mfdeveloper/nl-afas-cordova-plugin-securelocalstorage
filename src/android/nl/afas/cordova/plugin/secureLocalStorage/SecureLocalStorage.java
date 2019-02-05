@@ -284,6 +284,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       try {
 
         JSONObject changedData = new JSONObject();
+        changedData.put("actionName", "setItem");
         changedData.put("key", key);
         changedData.put("value", value);
 
@@ -540,6 +541,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       try {
 
         JSONObject changedData = new JSONObject();
+        changedData.put("actionName", "removeItem");
         changedData.put("key", key);
 
         checkEvents(changedData);
@@ -642,7 +644,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         if (listener instanceof SecureLocalStorageListener) {
 
-          ((SecureLocalStorageListener) listener).onChange(this, changedData.optString("key"), changedData.optString("value"));
+          ((SecureLocalStorageListener) listener).onChange(this, changedData.optString("actionName"), changedData.optString("key"), changedData.opt("value"));
         } else if (listener instanceof CallbackContext) {
 
           PluginResult result = new PluginResult(PluginResult.Status.OK, changedData);
@@ -883,7 +885,17 @@ public class SecureLocalStorage extends CordovaPlugin {
       throw new SecureLocalStorageException(e.getMessage(), e);
     } finally {
 
-      checkEvents(new JSONObject());
+      try {
+
+        JSONObject changedData = new JSONObject();
+        changedData.put("actionName", "clear");
+
+        checkEvents(changedData);
+      }catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
+      }
+
     }
   }
 
