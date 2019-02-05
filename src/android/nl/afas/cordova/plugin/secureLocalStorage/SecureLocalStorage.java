@@ -110,19 +110,60 @@ public class SecureLocalStorage extends CordovaPlugin {
   // encrypted key
   private static final String SECURELOCALSTORAGEKEY =  "secureLocalStorage.kdat";
   private static final String SECURELOCALSTORAGEALIAS = "SECURELOCALSTORAGEPPKEYALIAS";
+  private static final String SERVICE_NAME = "SecureLocalStorage";
+
+  private static CordovaPlugin instance = null;
 
   private final ReentrantLock lock = new ReentrantLock();
   private static SecretKey _key = null;
 
   private CordovaInterface _cordova;
 
+  public static synchronized SecureLocalStorage getInstance() {
+    if (instance == null) {
+      instance = new SecureLocalStorage();
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(CordovaWebView appView) {
+    if (instance == null) {
+      instance = new SecureLocalStorage(appView.getContext());
+      CordovaWebView webView = instance.webView != null ? instance.webView : appView;
+
+      instance = getPlugin(webView);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(Activity activity) {
+    if (instance == null) {
+      instance = new SecureLocalStorage(activity);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(Context context) {
+    if (instance == null) {
+      instance = new SecureLocalStorage(context);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
   public SecureLocalStorage() {}
 
-  public SecureLocalStorage(Context context) {
+  private SecureLocalStorage(Context context) {
     this.context = context;
   }
 
-  public SecureLocalStorage(Activity activity) {
+  private SecureLocalStorage(Activity activity) {
 
     if (activity != null) {
       this.context = activity.getBaseContext();
@@ -162,6 +203,22 @@ public class SecureLocalStorage extends CordovaPlugin {
     });
 
     return true;
+  }
+
+  public static CordovaPlugin getPlugin(CordovaPlugin plg) {
+    if (plg.webView != null) {
+
+      instance = plg.webView.getPluginManager().getPlugin(SERVICE_NAME);
+    }
+
+    return instance;
+  }
+
+  public static CordovaPlugin getPlugin(CordovaWebView webView) {
+
+    instance = webView.getPluginManager().getPlugin(SERVICE_NAME);
+
+    return instance;
   }
 
   public void initEncryptStorage() throws SecureLocalStorageException {
