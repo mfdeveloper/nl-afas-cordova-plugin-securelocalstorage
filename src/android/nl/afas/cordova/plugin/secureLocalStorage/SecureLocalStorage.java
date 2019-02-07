@@ -120,6 +120,7 @@ public class SecureLocalStorage extends CordovaPlugin {
   private CordovaInterface _cordova;
 
   public static synchronized SecureLocalStorage getInstance() {
+
     if (instance == null) {
       instance = new SecureLocalStorage();
       instance = getPlugin(instance);
@@ -129,17 +130,21 @@ public class SecureLocalStorage extends CordovaPlugin {
   }
 
   public static synchronized SecureLocalStorage getInstance(CordovaWebView appView) {
-    if (instance == null) {
+
+    if (instance == null && appView != null) {
       instance = new SecureLocalStorage(appView.getContext());
       CordovaWebView webView = instance.webView != null ? instance.webView : appView;
 
       instance = getPlugin(webView);
+    } else {
+      instance = getInstance();
     }
 
     return (SecureLocalStorage) instance;
   }
 
   public static synchronized SecureLocalStorage getInstance(Activity activity) {
+
     if (instance == null) {
       instance = new SecureLocalStorage(activity);
       instance = getPlugin(instance);
@@ -149,6 +154,7 @@ public class SecureLocalStorage extends CordovaPlugin {
   }
 
   public static synchronized SecureLocalStorage getInstance(Context context) {
+
     if (instance == null) {
       instance = new SecureLocalStorage(context);
       instance = getPlugin(instance);
@@ -298,6 +304,28 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
+  /**
+   * Set a POJO object like a json string
+   *
+   * @param key A string key
+   * @param value A Object value. If is a POJO, will be serialized to String
+   * @param classToSerialize Class reference to serialize the POJO
+   * @param <T>
+   * @return boolean True if the value is stored sucessfully. False, if otherwise
+   * @throws SecureLocalStorageException
+   */
+  public <T> boolean setItem(String key, Object value, Class<T> classToSerialize) throws SecureLocalStorageException {
+
+    if (classToSerialize != null && classToSerialize.isInstance(value)) {
+      value = gson.toJson(value);
+    } else {
+      throw new SecureLocalStorageException("The value needs be a instance of " + classToSerialize.getName());
+    }
+
+    return this.setItem(key, value);
+
+  }
+
   public void setItem(final String key, final Object value, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
 
     final boolean result = this.setItem(key, value);
@@ -384,11 +412,22 @@ public class SecureLocalStorage extends CordovaPlugin {
   public <T extends Object> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, SecureLocalStorageException {
 
     Object value = this.getItem(key);
-    String valueStr = value.toString();
 
-    if(valueStr != null && valueStr.length() > 0) {
+    if (value != null) {
 
-      return gson.fromJson(valueStr, pojoClass);
+      if(pojoClass.isInstance(value)) {
+        return (T) value;
+      }
+
+      if (value instanceof String) {
+
+        String valueStr = value.toString();
+
+        if(!valueStr.isEmpty()) {
+
+          return gson.fromJson(valueStr, pojoClass);
+        }
+      }
     }
 
     return null;
