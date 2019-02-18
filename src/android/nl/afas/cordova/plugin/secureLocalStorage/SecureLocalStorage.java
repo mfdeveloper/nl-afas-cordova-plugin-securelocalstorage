@@ -30,6 +30,7 @@ import android.security.KeyPairGeneratorSpec;
 import android.util.Log;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonSyntaxException;
 
 import org.apache.cordova.CallbackContext;
@@ -101,9 +102,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   protected KeyStore keyStore;
   protected Context context;
-  protected final ArrayList<Object> listeners = new ArrayList<>();
-
-  protected final ArrayList<CallbackContext> listenersCallback = new ArrayList<>();
+  protected final ArrayList<Object> listeners = new ArrayList<Object>();
 
   // encrypted local storage
   private static final String SECURELOCALSTORAGEFILE = "secureLocalStorage.sdat";
@@ -260,6 +259,8 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   public boolean setItem(String key, Object value) throws SecureLocalStorageException {
 
+    JsonElement originJson = null;
+
     if (key == null || key.length() == 0) {
       throw new SecureLocalStorageException("Key is empty or null");
     }
@@ -274,6 +275,11 @@ public class SecureLocalStorage extends CordovaPlugin {
 
       if (value == null) {
         throw new SecureLocalStorageException("Value is null");
+      }
+
+       originJson = gson.toJsonTree(value);
+      if (originJson != null && originJson.isJsonObject()) {
+        value = originJson.toString();
       }
 
       hashMap.put(key, value);
@@ -293,6 +299,11 @@ public class SecureLocalStorage extends CordovaPlugin {
         changedData.put("actionName", "setItem");
         changedData.put("key", key);
         changedData.put("value", value);
+
+        if (originJson != null) {
+
+          changedData.put("originValue", value);
+        }
 
         checkEvents(changedData);
       } catch (JSONException jsonErr) {
@@ -629,24 +640,9 @@ public class SecureLocalStorage extends CordovaPlugin {
     return hashMap.size() > 0 && hashMap.containsKey(key);
   }
 
-  public boolean isEmpty() throws SecureLocalStorageException {
+  public boolean isEmpty() {
 
-    if(!lock.isLocked() && lock.isHeldByCurrentThread()) {
-      lock.lock();
-    }
-
-    try{
-
-      if (hashMap.size() == 0) {
-        this.initEncryptStorage();
-      }
-    }finally {
-      if(lock.isLocked() && lock.isHeldByCurrentThread()) {
-        lock.unlock();
-      }
-    }
-
-    return hashMap.size() == 0;
+    return hashMap != null && hashMap.size() == 0;
   }
 
   public void registerListener(Object listener) {
@@ -874,7 +870,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     return ActionId.ACTION_NONE;
   }
 
-  @TargetApi(18)
+  @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
   private KeyStore initKeyStore() throws SecureLocalStorageException {
     try {
       KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");

@@ -2,9 +2,8 @@ package nl.afas.cordova.plugin.secureLocalStorage;
 
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.widget.TextView;
-
-import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -46,20 +45,16 @@ public class MainActivity extends AppCompatActivity {
         try {
             this.initialize();
         }catch (SecureLocalStorage.SecureLocalStorageException err) {
+            Log.e(err.getClass().getName(), err.getMessage(), err);
             err.printStackTrace();
-            System.out.println(err.getMessage());
-        }catch (IOException err) {
-            err.printStackTrace();
-            System.out.println(err.getMessage());
         }
     }
 
-    protected void initialize() throws IOException, SecureLocalStorage.SecureLocalStorageException {
-        SecureLocalStorage localStorage = new SecureLocalStorage(this);
-        if (localStorage.isEmpty()) {
+    protected void initialize() throws SecureLocalStorage.SecureLocalStorageException {
 
-            localStorage.setItem("person", new Person("Morgan", 55));
-        }
+        SecureLocalStorage localStorage = SecureLocalStorage.getInstance(this);
+
+        localStorage.setItem("person", new Person("Morgan", 55));
 
         Person person = localStorage.getItem("person", Person.class);
 
