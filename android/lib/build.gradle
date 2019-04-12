@@ -10,8 +10,13 @@ android {
      *  https://developer.android.com/studio/build/gradle-tips.html#change-default-source-set-configurations
      */
     sourceSets {
+
         main {
             java.srcDirs = ['../../src/android', 'src/main/java']
+        }
+
+        test {
+            java.srcDirs = ['../../src/android/test', 'src/test/java']
         }
     }
 
@@ -32,14 +37,19 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
 }
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation 'com.android.support:appcompat-v7:26.1.0'
     testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'com.android.support.test:runner:1.0.1'
-    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
+    testImplementation 'org.hamcrest:hamcrest-junit:2.0.0.0'
+    androidTestImplementation 'com.android.support.test:runner:1.0.2'
+    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
     implementation ('com.github.mfdeveloper:cordova-android:7.1.1')
 
     implementation 'com.google.code.gson:gson:2.8.2'

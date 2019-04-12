@@ -31,6 +31,7 @@ import android.util.Log;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonIOException;
 import com.google.gson.JsonSyntaxException;
 
 import org.apache.cordova.CallbackContext;
@@ -118,6 +119,26 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   private CordovaInterface _cordova;
 
+  public SecureLocalStorage() {}
+
+  private SecureLocalStorage(Context context) {
+    this.context = context;
+  }
+
+  private SecureLocalStorage(Activity activity) {
+
+    if (activity != null) {
+      this.context = activity.getBaseContext();
+    }
+
+  }
+
+  @Override
+  public void initialize(CordovaInterface cordova, CordovaWebView webView) {
+    super.initialize(cordova, webView);
+    _cordova = cordova;
+  }
+
   public static synchronized SecureLocalStorage getInstance() {
 
     if (instance == null) {
@@ -162,24 +183,23 @@ public class SecureLocalStorage extends CordovaPlugin {
     return (SecureLocalStorage) instance;
   }
 
-  public SecureLocalStorage() {}
+  public static CordovaPlugin getPlugin(CordovaPlugin plugin) {
 
-  private SecureLocalStorage(Context context) {
-    this.context = context;
-  }
+    if (plugin.webView != null) {
 
-  private SecureLocalStorage(Activity activity) {
-
-    if (activity != null) {
-      this.context = activity.getBaseContext();
+      instance = plugin.webView.getPluginManager().getPlugin(SERVICE_NAME);
+    } else {
+      instance = plugin;
     }
 
+    return instance;
   }
 
-  @Override
-  public void initialize(CordovaInterface cordova, CordovaWebView webView) {
-    super.initialize(cordova, webView);
-    _cordova = cordova;
+  public static CordovaPlugin getPlugin(CordovaWebView webView) {
+
+    instance = webView.getPluginManager().getPlugin(SERVICE_NAME);
+
+    return instance;
   }
 
   @Override
@@ -210,22 +230,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     return true;
   }
 
-  public static CordovaPlugin getPlugin(CordovaPlugin plg) {
-    if (plg.webView != null) {
-
-      instance = plg.webView.getPluginManager().getPlugin(SERVICE_NAME);
-    }
-
-    return instance;
-  }
-
-  public static CordovaPlugin getPlugin(CordovaWebView webView) {
-
-    instance = webView.getPluginManager().getPlugin(SERVICE_NAME);
-
-    return instance;
-  }
-
   public void initEncryptStorage() throws SecureLocalStorageException {
 
     if (keyStore == null) {
@@ -248,15 +252,6 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   }
 
-  private Context getContext() throws SecureLocalStorageException {
-    context = _cordova != null ? _cordova.getActivity().getBaseContext() : context;
-    if (context == null) {
-      throw new SecureLocalStorageException("The Android Context is required. Verify if the 'activity' or 'context' are passed by constructor");
-    }
-
-    return context;
-  }
-
   public boolean setItem(String key, Object value) throws SecureLocalStorageException {
 
     JsonElement originJson = null;
@@ -277,7 +272,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         throw new SecureLocalStorageException("Value is null");
       }
 
-       originJson = gson.toJsonTree(value);
+      originJson = gson.toJsonTree(value);
       if (originJson != null && originJson.isJsonObject()) {
         value = originJson.toString();
       }
@@ -308,7 +303,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         checkEvents(changedData);
       } catch (JSONException jsonErr) {
         Log.e("SecureLocalStorage", jsonErr.getMessage());
-        throw new RuntimeException(jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
       }
 
       return true;
@@ -383,24 +378,32 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         value = hashMap.get(key);
 
-        try {
+        if (value instanceof String) {
+          JSONObject jsonResult = new JSONObject((String) value);
 
-          if (value instanceof String) {
-            JSONObject jsonResult = new JSONObject((String) value);
-
-            if (jsonResult.has("nameValuePairs")) {
-              value = jsonResult.getJSONObject("nameValuePairs");
-            }
+          if (jsonResult.has("nameValuePairs")) {
+            value = jsonResult.getJSONObject("nameValuePairs");
+          } else {
+            value = jsonResult;
           }
-        } catch (Exception jsonErr) {
-          jsonErr.printStackTrace();
-          Log.e("SecureStorage", jsonErr.getMessage(), jsonErr);
+
+        } else if (value != null) {
+
+          try {
+
+            String jsonStr = this.gson.toJson(value);
+            value = new JSONObject(jsonStr);
+
+          } catch (JsonIOException jsonErr) {
+            Log.e("SecureStorage", jsonErr.getMessage(), jsonErr);
+          }
         }
+
       }
 
     } catch(Exception err) {
       Log.e("SecureStorage", err.getMessage(), err);
-      throw err;
+      throw new RuntimeException(err);
     } finally {
       if(lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
@@ -480,8 +483,6 @@ public class SecureLocalStorage extends CordovaPlugin {
         Log.e("SecureLocalStorage", jsonErr.getMessage());
         throw new RuntimeException(jsonErr);
       }
-
-      return;
     }
   }
 
@@ -670,6 +671,66 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   public Object unregisterListener(int index) {
     return listeners.remove(index);
+  }
+
+  public void clear(File file, KeyStore keyStore) throws SecureLocalStorageException {
+    if (file.exists()) {
+      if (!file.delete()) {
+        throw new SecureLocalStorageException("Could not delete storage file");
+      }
+    }
+    try {
+      if (keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
+        keyStore.deleteEntry(SECURELOCALSTORAGEALIAS);
+      }
+    } catch (Exception e) {
+      Log.e("SecureStorage",e.getMessage(), e);
+      throw new SecureLocalStorageException(e.getMessage(), e);
+    } finally {
+
+      try {
+
+        JSONObject changedData = new JSONObject();
+        changedData.put("actionName", "clear");
+
+        checkEvents(changedData);
+      }catch (JSONException jsonErr) {
+        Log.e("SecureLocalStorage", jsonErr.getMessage());
+        throw new RuntimeException(jsonErr);
+      }
+
+    }
+  }
+
+  public void clear() throws SecureLocalStorageException {
+
+    context = getContext();
+    File file = context.getFileStreamPath(SECURELOCALSTORAGEFILE);
+
+    if (keyStore == null) {
+
+      keyStore = initKeyStore();
+    }
+
+    this.clear(file, keyStore);
+
+    try {
+      keyStore = initKeyStore();
+      generateKey(keyStore);
+    }
+    catch(SecureLocalStorageException ex2) {
+      Log.e("SecureStorage",ex2.getMessage(), ex2);
+      throw ex2;
+    }
+  }
+
+  protected Context getContext() throws SecureLocalStorageException {
+    context = _cordova != null ? _cordova.getActivity().getBaseContext() : context;
+    if (context == null) {
+      throw new SecureLocalStorageException("The Android Context is required. Verify if the 'activity' or 'context' are passed by constructor");
+    }
+
+    return context;
   }
 
   private void checkEvents(JSONObject changedData) {
@@ -902,57 +963,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     catch (Exception e){
       Log.e("SecureStorage","Could not initialize keyStore", e);
       throw new SecureLocalStorageException("Could not initialize keyStore", e);
-    }
-  }
-
-  public void clear(File file, KeyStore keyStore) throws SecureLocalStorageException {
-    if (file.exists()) {
-      if (!file.delete()) {
-        throw new SecureLocalStorageException("Could not delete storage file");
-      }
-    }
-    try {
-      if (keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
-        keyStore.deleteEntry(SECURELOCALSTORAGEALIAS);
-      }
-    } catch (Exception e) {
-      Log.e("SecureStorage",e.getMessage(), e);
-      throw new SecureLocalStorageException(e.getMessage(), e);
-    } finally {
-
-      try {
-
-        JSONObject changedData = new JSONObject();
-        changedData.put("actionName", "clear");
-
-        checkEvents(changedData);
-      }catch (JSONException jsonErr) {
-        Log.e("SecureLocalStorage", jsonErr.getMessage());
-        throw new RuntimeException(jsonErr);
-      }
-
-    }
-  }
-
-  public void clear() throws SecureLocalStorageException {
-
-    context = getContext();
-    File file = context.getFileStreamPath(SECURELOCALSTORAGEFILE);
-
-    if (keyStore == null) {
-
-      keyStore = initKeyStore();
-    }
-
-    this.clear(file, keyStore);
-
-    try {
-      keyStore = initKeyStore();
-      generateKey(keyStore);
-    }
-    catch(SecureLocalStorageException ex2) {
-      Log.e("SecureStorage",ex2.getMessage(), ex2);
-      throw ex2;
     }
   }
 
