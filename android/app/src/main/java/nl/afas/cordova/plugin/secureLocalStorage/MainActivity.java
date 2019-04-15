@@ -5,17 +5,19 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.TextView;
 
+import java.io.Serializable;
+
 public class MainActivity extends AppCompatActivity {
 
-    private static class Person {
+    private static class Person implements Serializable {
         protected String name;
-        protected Integer age;
+        protected int age;
 
         public Person() {
 
         }
 
-        public Person(String name, Integer age) {
+        public Person(String name, int age) {
             this.name = name;
             this.age = age;
         }
@@ -44,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             this.initialize();
-        }catch (SecureLocalStorage.SecureLocalStorageException err) {
+        } catch(SecureLocalStorage.SecureLocalStorageException err) {
             Log.e(err.getClass().getName(), err.getMessage(), err);
             err.printStackTrace();
         }
@@ -60,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
 
         TextView textFirst = findViewById(R.id.textView);
         TextView textSecond = findViewById(R.id.textView2);
+
         textFirst.setText(String.format("Name from POJO: %s", person.getName()));
         textSecond.setText(String.format("JSON string: %s", localStorage.getItem("person")));
     }

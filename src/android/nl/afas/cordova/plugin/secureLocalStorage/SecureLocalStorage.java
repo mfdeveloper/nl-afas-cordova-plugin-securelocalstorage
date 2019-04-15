@@ -89,7 +89,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     ACTION_UNREGISTER_LISTENER
   }
 
-  public class SecureLocalStorageException extends Exception{
+  public class SecureLocalStorageException extends Exception {
     public SecureLocalStorageException(String message){
       super(message);
     }
@@ -120,6 +120,12 @@ public class SecureLocalStorage extends CordovaPlugin {
   private CordovaInterface _cordova;
 
   public SecureLocalStorage() {}
+
+  public SecureLocalStorage(Context context, KeyStore keyStore, SecretKey secretKey) {
+    this.context = context;
+    this.keyStore = keyStore;
+    _key = secretKey;
+  }
 
   private SecureLocalStorage(Context context) {
     this.context = context;
@@ -173,6 +179,16 @@ public class SecureLocalStorage extends CordovaPlugin {
     return (SecureLocalStorage) instance;
   }
 
+  public static synchronized SecureLocalStorage getInstance(Context context, KeyStore keyStore, SecretKey secretKey) {
+
+    if (instance == null) {
+      instance = new SecureLocalStorage(context, keyStore, secretKey);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
   public static synchronized SecureLocalStorage getInstance(Context context) {
 
     if (instance == null) {
@@ -200,6 +216,10 @@ public class SecureLocalStorage extends CordovaPlugin {
     instance = webView.getPluginManager().getPlugin(SERVICE_NAME);
 
     return instance;
+  }
+
+  public void setKeyStore(KeyStore keyStore) {
+    this.keyStore = keyStore;
   }
 
   @Override
@@ -240,7 +260,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     context = getContext();
     File file = context.getFileStreamPath(SECURELOCALSTORAGEFILE);
 
-    if (!file.exists()) {
+    if (file != null && !file.exists()) {
       // generate key and store in keyStore
       generateKey(keyStore);
 
@@ -310,28 +330,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  /**
-   * Set a POJO object like a json string
-   *
-   * @param key A string key
-   * @param value A Object value. If is a POJO, will be serialized to String
-   * @param classToSerialize Class reference to serialize the POJO
-   * @param <T>
-   * @return boolean True if the value is stored sucessfully. False, if otherwise
-   * @throws SecureLocalStorageException
-   */
-  public <T> boolean setItem(String key, Object value, Class<T> classToSerialize) throws SecureLocalStorageException {
-
-    if (classToSerialize != null && classToSerialize.isInstance(value)) {
-      value = gson.toJson(value);
-    } else {
-      throw new SecureLocalStorageException("The value needs be a instance of " + classToSerialize.getName());
-    }
-
-    return this.setItem(key, value);
-
-  }
-
   public void setItem(final String key, final Object value, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
 
     final boolean result = this.setItem(key, value);
@@ -387,6 +385,9 @@ public class SecureLocalStorage extends CordovaPlugin {
             value = jsonResult;
           }
 
+        } else if (value instanceof Boolean || value instanceof Integer) {
+
+          return value;
         } else if (value != null) {
 
           try {
@@ -423,7 +424,7 @@ public class SecureLocalStorage extends CordovaPlugin {
    * @throws IOException
    * @throws SecureLocalStorageException
    */
-  public <T extends Object> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, SecureLocalStorageException {
+  public <T> T getItem(String key, Class<T> pojoClass) throws JsonSyntaxException, SecureLocalStorageException {
 
     Object value = this.getItem(key);
 
@@ -433,7 +434,7 @@ public class SecureLocalStorage extends CordovaPlugin {
         return (T) value;
       }
 
-      if (value instanceof String) {
+      if (value instanceof String || value instanceof JSONObject) {
 
         String valueStr = value.toString();
 
@@ -984,7 +985,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  private SecretKey getSecretKey(KeyStore keyStore) throws
+  public SecretKey getSecretKey(KeyStore keyStore) throws
           NoSuchAlgorithmException,
           UnrecoverableEntryException,
           KeyStoreException,
@@ -1082,7 +1083,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
 
   @SuppressWarnings("unchecked")
-  private HashMap<String, Object> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
+  public HashMap<String, Object> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
 
 
     try {
@@ -1091,46 +1092,53 @@ public class SecureLocalStorage extends CordovaPlugin {
 
       context = getContext();
       FileInputStream fis = context.openFileInput(SECURELOCALSTORAGEFILE);
-      ArrayList<Byte> values = new ArrayList<Byte>();
 
-      try {
+      if (fis != null) {
 
-        Cipher output = Cipher.getInstance("DES");
-        output.init(Cipher.DECRYPT_MODE, key);
+        ArrayList<Byte> values = new ArrayList<Byte>();
 
-        CipherInputStream cipherInputStream = new CipherInputStream(
-                fis, output);
         try {
 
-          int nextByte;
-          while ((nextByte = cipherInputStream.read()) != -1) {
-            values.add((byte) nextByte);
+          Cipher output = Cipher.getInstance("DES");
+          output.init(Cipher.DECRYPT_MODE, key);
+
+          CipherInputStream cipherInputStream = new CipherInputStream(
+                  fis, output);
+          try {
+
+            int nextByte;
+            while ((nextByte = cipherInputStream.read()) != -1) {
+              values.add((byte) nextByte);
+            }
+          }
+          finally {
+            cipherInputStream.close();
           }
         }
         finally {
-          cipherInputStream.close();
+          fis.close();
         }
-      }
-      finally {
-        fis.close();
-      }
 
-      byte[] bytes = new byte[values.size()];
-      for (int i = 0; i < bytes.length; i++) {
-        bytes[i] = values.get(i);
-      }
+        byte[] bytes = new byte[values.size()];
+        for (int i = 0; i < bytes.length; i++) {
+          bytes[i] = values.get(i);
+        }
 
 
 
-      HashMap<String, Object> hashMap;
-      ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
-      try {
-        hashMap = (HashMap<String, Object>) ois.readObject();
+        HashMap<String, Object> hashMap;
+        ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
+        try {
+          hashMap = (HashMap<String, Object>) ois.readObject();
+        }
+        finally {
+          ois.close();
+        }
+        return hashMap;
+      } else {
+        return this.hashMap;
       }
-      finally {
-        ois.close();
-      }
-      return hashMap;
+
     }
     catch(Exception e) {
       Log.e("SecureStorage","Write",e);
