@@ -21,6 +21,7 @@
     <!-- Android -->
     <platform name="android">
         <framework src="com.google.code.gson:gson:2.8.2" />
+        <framework src="commons-io:commons-io:2.4" />
         <source-file src="src/android/nl/afas/cordova/plugin/secureLocalStorage/SecureLocalStorage.java" target-dir="src/nl/afas/cordova/plugin/secureLocalStorage" />
         <source-file src="src/android/nl/afas/cordova/plugin/secureLocalStorage/SecureLocalStorageListener.java" target-dir="src/nl/afas/cordova/plugin/secureLocalStorage" />
         <config-file target="res/xml/config.xml" parent="/*">

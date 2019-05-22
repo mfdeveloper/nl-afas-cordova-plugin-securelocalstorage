@@ -153,7 +153,7 @@ public class SecureLocalStorageTest {
      * Set a Integer and retrieve the same int value
      *
      * @see SecureLocalStorage#setItem(String, Object)
-     * @see SecureLocalStorage#getItem(String, Class)
+     * @see SecureLocalStorage#getItem(String)
      */
     @Test
     public void getInteger() {

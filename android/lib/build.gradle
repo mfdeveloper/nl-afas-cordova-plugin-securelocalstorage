@@ -64,4 +64,10 @@ dependencies {
 
     implementation 'com.github.mfdeveloper:cordova-android:7.1.1'
     implementation 'com.google.code.gson:gson:2.8.2'
+
+    /**
+     * Reference: Avoid "Unable to merge Dex" exception
+     * https://stackoverflow.com/questions/47341975/unable-to-merge-dex-commons-apache
+     */
+    implementation group: 'commons-io', name: 'commons-io', version: '2.4'
 }
