@@ -60,6 +60,8 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.UnrecoverableEntryException;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
@@ -99,11 +101,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     public SecureLocalStorageException(String message,Exception ex){
       super(message,ex);
     }
-  }
-
-  public enum StreamType {
-    INPUT,
-    OUTPUT
   }
 
   protected HashMap<String, Object> hashMap = new HashMap<String, Object>();
@@ -1007,10 +1004,24 @@ public class SecureLocalStorage extends CordovaPlugin {
       return _key;
     }
 
-    KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
-
-
     SecretKey key = null;
+    PrivateKey privateKey;
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+
+        // Use KeyStore to get PRIVATE key on Android 9+
+        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
+
+    } else {
+
+      KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
+
+      if (privateKeyEntry != null) {
+        privateKey = privateKeyEntry.getPrivateKey();
+      } else {
+        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
+      }
+    }
 
     FileInputStream fis = openFileInput(SECURELOCALSTORAGEKEY);
 
@@ -1020,7 +1031,10 @@ public class SecureLocalStorage extends CordovaPlugin {
 
         Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding");
 
-        output.init(Cipher.DECRYPT_MODE, privateKeyEntry.getPrivateKey());
+        if (privateKey != null) {
+
+          output.init(Cipher.DECRYPT_MODE, privateKey);
+        }
 
 
         CipherInputStream cipherInputStream = new CipherInputStream(
@@ -1050,6 +1064,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
     try {
       _key = null;
+      PublicKey publicKey = null;
 
       SecretKey key = KeyGenerator.getInstance("DES").generateKey();
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -1065,10 +1080,25 @@ public class SecureLocalStorage extends CordovaPlugin {
       }
 
       // store key encrypted with keystore key pair
-      KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+
+        // Use KeyStore to get PUBLIC key on Android 9+
+        publicKey = keyStore.getCertificate(SECURELOCALSTORAGEALIAS).getPublicKey();
+      } else {
+
+        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
+        if (privateKeyEntry != null) {
+          publicKey = privateKeyEntry.getCertificate().getPublicKey();
+        } else {
+          publicKey = keyStore.getCertificate(SECURELOCALSTORAGEALIAS).getPublicKey();
+        }
+      }
 
       Cipher input = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-      input.init(Cipher.ENCRYPT_MODE, privateKeyEntry.getCertificate().getPublicKey());
+
+      if (publicKey != null) {
+        input.init(Cipher.ENCRYPT_MODE, publicKey);
+      }
 
       FileOutputStream fos = openFileOutput(SECURELOCALSTORAGEKEY);
 

@@ -33,6 +33,7 @@ public class SecureLocalStorageTest {
 
 
     protected SecureLocalStorage secureLocalStorage;
+    protected KeyStore keyStore;
 
     class PojoTest {
 
@@ -59,11 +60,33 @@ public class SecureLocalStorageTest {
     @Before
     public void setUp() {
 
-        KeyStore keyStore = mock(KeyStore.class);
+        keyStore = mock(KeyStore.class);
         Context context = mock(Context.class);
         SecretKey secretKey = mock(SecretKey.class);
 
         secureLocalStorage = SecureLocalStorage.getInstance(context, keyStore, secretKey);
+    }
+
+    /**
+     * Get the secret key to encrypt storage data without any exceptions
+     * @throws Exception
+     */
+    @Test()
+    public void getSecreKeyWithoutErrors() throws Exception {
+
+        SecretKey secretKey = secureLocalStorage.getSecretKey(keyStore);
+        assertNotNull(secretKey);
+    }
+
+    /**
+     * Initialize encrypt storage (generate keys, store all previous data to a hashMap)
+     * without any exceptions
+     * @throws Exception
+     */
+    @Test()
+    public void initializeStorageWithoutErrors() throws Exception {
+
+        secureLocalStorage.initEncryptStorage();
     }
 
     /**
