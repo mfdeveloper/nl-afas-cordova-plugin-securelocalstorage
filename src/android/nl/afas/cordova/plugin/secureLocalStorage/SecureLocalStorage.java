@@ -54,6 +54,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.lang.reflect.Field;
 import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.KeyPairGenerator;
@@ -1007,7 +1008,9 @@ public class SecureLocalStorage extends CordovaPlugin {
     SecretKey key = null;
     PrivateKey privateKey;
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+    int android9Api = getAndroid9Api();
+
+    if (Build.VERSION.SDK_INT >= android9Api) {
 
         // Use KeyStore to get PRIVATE key on Android 9+
         privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
@@ -1060,6 +1063,29 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   }
 
+  /**
+   * Get the Android 9 API number using reflection
+   * This is great for use cordova-android 6.x or 7.x
+   * and check Android 9 codes
+   *
+   * @return
+   */
+  private int getAndroid9Api() {
+    int android9Value = 0;
+    try {
+      Field P = Build.VERSION_CODES.class.getDeclaredField("P");
+      try {
+        android9Value = P.getInt(null);
+      } catch (IllegalAccessException e) {
+        e.printStackTrace();
+      }
+    } catch (NoSuchFieldException e) {
+      android9Value = 28;
+      Log.i("SecureStorage", e.getMessage());
+    }
+    return android9Value;
+  }
+
   private void generateKey(KeyStore keyStore) throws SecureLocalStorageException {
 
     try {
@@ -1079,8 +1105,9 @@ public class SecureLocalStorage extends CordovaPlugin {
         bos.close();
       }
 
+      int android9Api = getAndroid9Api();
       // store key encrypted with keystore key pair
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      if (Build.VERSION.SDK_INT >= android9Api) {
 
         // Use KeyStore to get PUBLIC key on Android 9+
         publicKey = keyStore.getCertificate(SECURELOCALSTORAGEALIAS).getPublicKey();
