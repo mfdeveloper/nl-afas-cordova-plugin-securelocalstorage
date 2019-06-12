@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'nl-afas-cordova-plugin-securelocalstorage'
-  s.version          = '0.0.2'
+  s.version          = '0.2.0'
   s.summary          = 'This plugin will store local data encrypted using the IOS keychain from original repo version tag 0.1.14'
 
 # This description is used to generate tags and improve search results.
@@ -24,7 +24,7 @@ This plugin will store local data encrypted using the IOS keychain
   s.homepage         = 'https://github.com/adelmojunnior/nl-afas-cordova-plugin-securelocalstorage'
   # s.screenshots     = 'www.example.com/screenshots_1', 'www.example.com/screenshots_2'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
-  s.author           = { 'adelmojunnior@gmail.com' => 'adelmojunnior@gmail.com' }
+  s.author           = { 'Adelmo Júnior' => 'adelmojunnior@gmail.com' }
   s.source           = { :git => 'https://github.com/adelmojunnior/nl-afas-cordova-plugin-securelocalstorage.git', :tag => s.version.to_s }
   # s.social_media_url = 'https://twitter.com/<TWITTER_USERNAME>'
 
