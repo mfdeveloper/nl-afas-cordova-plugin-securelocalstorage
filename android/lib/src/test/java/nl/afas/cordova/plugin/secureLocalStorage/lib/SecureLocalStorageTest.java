@@ -2,6 +2,7 @@ package nl.afas.cordova.plugin.secureLocalStorage.lib;
 
 import android.content.Context;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
 import org.junit.Test;
@@ -68,6 +69,22 @@ public class SecureLocalStorageTest {
     }
 
     /**
+     * Get a stored hash token like a String
+     * @throws Exception
+     */
+    @Test()
+    public void getStoredToken() throws Exception {
+
+        String tokenToSave = "e1pN0yDS-Wk:APA91Ze4axvAHUWAK_GL6";
+        secureLocalStorage.setItem("token", tokenToSave);
+
+        String token = (String) secureLocalStorage.getItem("token");
+
+        assertNotNull(token);
+        assertEquals(tokenToSave, token);
+    }
+
+    /**
      * Get the secret key to encrypt storage data without any exceptions
      * @throws Exception
      */
@@ -87,6 +104,58 @@ public class SecureLocalStorageTest {
     public void initializeStorageWithoutErrors() throws Exception {
 
         secureLocalStorage.initEncryptStorage();
+    }
+
+    /**
+     * Set a json string and retrieve a JSONObject instance
+     *
+     * @see SecureLocalStorage#setItem(String, Object)
+     * @see SecureLocalStorage#getItem(String, Class)
+     */
+    @Test
+    public void getStringAsJsonObject() {
+
+        String json = "{\"key\":\"A key\", \"value\": \"A json value\"}";
+
+        try {
+            boolean stored = secureLocalStorage.setItem("jsonToConvert", json);
+            if (stored) {
+                Object value = secureLocalStorage.getItem("jsonToConvert");
+                assertNotNull(value);
+                assertEquals("A key", ((JSONObject) value).optString("key"));
+                assertEquals("A json value", ((JSONObject) value).optString("value"));
+            }
+
+        } catch (SecureLocalStorage.SecureLocalStorageException e) {
+            fail(e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Set a json array string and retrieve a JSONArray instance
+     *
+     * @see SecureLocalStorage#setItem(String, Object)
+     * @see SecureLocalStorage#getItem(String, Class)
+     */
+    @Test
+    public void getStringAsJsonArray() {
+
+        String json = "[{\"key\":\"A key\", \"value\": \"A json value\"}]";
+
+        try {
+            boolean stored = secureLocalStorage.setItem("jsonToConvert", json);
+            if (stored) {
+                JSONArray value = (JSONArray) secureLocalStorage.getItem("jsonToConvert");
+                assertNotNull(value);
+                assertEquals("A key", value.optJSONObject(0).optString("key"));
+                assertEquals("A json value", value.optJSONObject(0).optString("value"));
+            }
+
+        } catch (SecureLocalStorage.SecureLocalStorageException e) {
+            fail(e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     /**

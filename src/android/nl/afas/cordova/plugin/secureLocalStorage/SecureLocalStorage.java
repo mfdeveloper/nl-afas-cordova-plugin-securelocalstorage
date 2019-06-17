@@ -26,7 +26,6 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.os.Build;
-import android.os.Environment;
 import android.security.KeyPairGeneratorSpec;
 import android.util.Log;
 
@@ -382,12 +381,25 @@ public class SecureLocalStorage extends CordovaPlugin {
         value = hashMap.get(key);
 
         if (value instanceof String) {
-          JSONObject jsonResult = new JSONObject((String) value);
+          String strValue = (String) value;
 
-          if (jsonResult.has("nameValuePairs")) {
-            value = jsonResult.getJSONObject("nameValuePairs");
-          } else {
-            value = jsonResult;
+          if (strValue.startsWith("{") || strValue.startsWith("[")) {
+
+            try {
+
+              JSONObject jsonResult = new JSONObject(strValue);
+
+              if (jsonResult.has("nameValuePairs")) {
+                value = jsonResult.getJSONObject("nameValuePairs");
+              } else {
+                value = jsonResult;
+              }
+            } catch (JSONException jsonErr) {
+              if (jsonErr.getMessage().contains("JSONArray cannot be converted")) {
+                value = new JSONArray(strValue);
+              }
+            }
+
           }
 
         } else if (value instanceof Boolean || value instanceof Integer) {
