@@ -63,6 +63,31 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     return dict;
 }
 
+- (void) containsItem: (CDVInvokedUrlCommand*)command {
+    CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_NO_RESULT];
+    [pluginResult setKeepCallback: [NSNumber numberWithBool:YES]];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId: command.callbackId];
+    
+    [self.commandDelegate runInBackground:^{
+        @synchronized(self) {
+            NSMutableDictionary * dict = [self readFromSecureStorage];
+            CDVPluginResult * pluginResult;
+            BOOL *result = NO;
+            
+            if (dict != nil && [dict count] > 0) {
+                NSString * value = [dict valueForKey:command.arguments[0]];
+                if (value != nil) {
+                    result = YES;
+                }
+            }
+            
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:result];
+            [pluginResult setKeepCallback: [NSNumber numberWithBool:NO]];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId: command.callbackId];
+        }
+    }];
+}
+
 - (void) getItem: (CDVInvokedUrlCommand*)command {
     CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_NO_RESULT];
     [pluginResult setKeepCallback: [NSNumber numberWithBool:YES]];

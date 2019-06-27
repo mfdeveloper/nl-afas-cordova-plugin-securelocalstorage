@@ -29,6 +29,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - (void) writeToSecureStorage:(NSMutableDictionary*)dict;
 - (NSMutableDictionary *) readFromSecureStorage;
+- (void) containsItem: (CDVInvokedUrlCommand*)command;
 - (void) getItem: (CDVInvokedUrlCommand*)command;
 - (void) setItem: (CDVInvokedUrlCommand*)command;
 - (void) removeItem: (CDVInvokedUrlCommand*)command;
