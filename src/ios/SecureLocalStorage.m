@@ -63,6 +63,31 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     return dict;
 }
 
+- (void) containsItem: (CDVInvokedUrlCommand*)command {
+    CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_NO_RESULT];
+    [pluginResult setKeepCallback: [NSNumber numberWithBool:YES]];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId: command.callbackId];
+
+    [self.commandDelegate runInBackground:^{
+        @synchronized(self) {
+            NSMutableDictionary * dict = [self readFromSecureStorage];
+            CDVPluginResult * pluginResult;
+            BOOL *result = NO;
+
+            if (dict != nil && [dict count] > 0) {
+                NSString * value = [dict valueForKey:command.arguments[0]];
+                if (value != nil) {
+                    result = YES;
+                }
+            }
+
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsBool:result];
+            [pluginResult setKeepCallback: [NSNumber numberWithBool:NO]];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId: command.callbackId];
+        }
+    }];
+}
+
 - (void) getItem: (CDVInvokedUrlCommand*)command {
     CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_NO_RESULT];
     [pluginResult setKeepCallback: [NSNumber numberWithBool:YES]];
@@ -149,29 +174,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		
 		NSMutableDictionary * dict = [self readFromSecureStorage];
 
-		if (![[NSUserDefaults standardUserDefaults] objectForKey:@"FirstRunSecureLocalStorage"]) {				
-			
-			if (dict != nil) {
-				if ([[dict valueForKey:@"MustBeDeletedByNextInstall"] isEqualToString: @"1"]) {
-				
-					dict = [NSMutableDictionary new];
-					[self writeToSecureStorage:dict];
-				}
-			}
-			
-			[[NSUserDefaults standardUserDefaults] setValue:@"OADMIP" forKey:@"FirstRunSecureLocalStorage"];
-			[[NSUserDefaults standardUserDefaults] synchronize];				
-		}
-					
-		if (dict == nil) {
-			dict = [NSMutableDictionary new];
-			[self writeToSecureStorage:dict];
-		}
-		if (![[dict valueForKey:@"MustBeDeletedByNextInstall"] isEqualToString: @"1"]) {
-			[dict setValue:@"1" forKey:@"MustBeDeletedByNextInstall"];
-			[self writeToSecureStorage:dict];
-		}
-				
+        if (dict == nil) {
+            dict = [NSMutableDictionary new];
+            [self writeToSecureStorage:dict];
+        }
+        				
 		CDVPluginResult * pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
 		[pluginResult setKeepCallback: [NSNumber numberWithBool:NO]];
 		
