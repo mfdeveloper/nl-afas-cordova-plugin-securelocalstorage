@@ -353,7 +353,7 @@ public class SecureLocalStorage extends CordovaPlugin {
       JSONObject error = new JSONObject() {{
         put("success", result);
         put("name", "SetValueException");
-        put("message", String.format("The key=>value '%s=>%' cannot be set", key, value));
+        put("message", String.format("The key => value '%s=>%s' cannot be set", key, value));
       }};
 
       callbackContext.error(error);
@@ -743,34 +743,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  protected Context getContext() throws SecureLocalStorageException {
-    context = _cordova != null ? _cordova.getActivity().getBaseContext() : context;
-    if (context == null) {
-      throw new SecureLocalStorageException("The Android Context is required. Verify if the 'activity' or 'context' are passed by constructor");
-    }
-
-    return context;
-  }
-
-  private void checkEvents(JSONObject changedData) {
-
-    if (listeners.size() > 0) {
-      for (Object listener: listeners ) {
-
-        if (listener instanceof SecureLocalStorageListener) {
-
-          ((SecureLocalStorageListener) listener).onChange(this, changedData.optString("actionName"), changedData.optString("key"), changedData.opt("value"));
-        } else if (listener instanceof CallbackContext) {
-
-          PluginResult result = new PluginResult(PluginResult.Status.OK, changedData);
-          result.setKeepCallback(true);
-          ((CallbackContext) listener).sendPluginResult(result);
-        }
-      }
-    }
-  }
-
-  private void handleException(Exception ex, CallbackContext callbackContext) {
+  public void handleException(Exception ex, CallbackContext callbackContext) {
 
     Log.e("SecureLocalStorage", "exception", ex);
 
@@ -792,7 +765,7 @@ public class SecureLocalStorage extends CordovaPlugin {
     callbackContext.sendPluginResult(pluginResult);
   }
 
-  private void handleAction(ActionId actionId, JSONArray args, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
+  public boolean handleAction(ActionId actionId, JSONArray args, CallbackContext callbackContext) throws SecureLocalStorageException, JSONException {
 
     if (Build.VERSION.SDK_INT < 18) {
       throw new SecureLocalStorageException("Invalid API Level (must be >= 18");
@@ -805,13 +778,17 @@ public class SecureLocalStorage extends CordovaPlugin {
     lock.lock();
     try {
 
-      keyStore = initKeyStore();
+      if (keyStore == null) {
+        keyStore = initKeyStore();
+      }
 
       // clear just deletes the storage file
       if (actionId == ActionId.ACTION_CLEAR) {
         clear();
         try {
-          keyStore = initKeyStore();
+          if (keyStore == null) {
+            keyStore = initKeyStore();
+          }
           generateKey(keyStore);
         }
         catch(SecureLocalStorageException ex2) {
@@ -891,15 +868,19 @@ public class SecureLocalStorage extends CordovaPlugin {
               value = args.getJSONObject(1);
             } catch (JSONException valueJsonErr) {
 
-              valueJsonErr.printStackTrace();
-              Log.e("SecureStorage", valueJsonErr.getMessage(), valueJsonErr);
+              try {
 
-              value = args.getString(1);
-            }finally {
+                value = args.getString(1);
+              } catch (JSONException valueStringErr) {
+
+                Log.e("SecureStorage", valueJsonErr.getMessage(), valueStringErr);
+                valueStringErr.printStackTrace();
+              }
+
+            } finally {
 
               this.setItem(key, value, callbackContext);
             }
-
 
           } else if (actionId == ActionId.ACTION_REMOVEITEM) {
 
@@ -914,6 +895,173 @@ public class SecureLocalStorage extends CordovaPlugin {
     } finally {
       if (lock.isLocked() && lock.isHeldByCurrentThread()) {
         lock.unlock();
+      }
+    }
+
+    return true;
+  }
+
+  public SecretKey getSecretKey(KeyStore keyStore) throws
+          NoSuchAlgorithmException,
+          UnrecoverableEntryException,
+          KeyStoreException,
+          NoSuchPaddingException,
+          InvalidKeyException,
+          IOException,
+          ClassNotFoundException,
+          SecureLocalStorageException {
+
+    if (_key != null) {
+      return _key;
+    }
+
+    SecretKey key = null;
+    PrivateKey privateKey;
+
+    int android9Api = getAndroid9Api();
+
+    if (Build.VERSION.SDK_INT >= android9Api) {
+
+        // Use KeyStore to get PRIVATE key on Android 9+
+        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
+
+    } else {
+
+      KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
+
+      if (privateKeyEntry != null) {
+        privateKey = privateKeyEntry.getPrivateKey();
+      } else {
+        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
+      }
+    }
+
+    FileInputStream fis = openFileInput(SECURELOCALSTORAGEKEY);
+
+    if (fis != null) {
+
+      try {
+
+        Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+
+        if (privateKey != null) {
+
+          output.init(Cipher.DECRYPT_MODE, privateKey);
+        }
+
+
+        CipherInputStream cipherInputStream = new CipherInputStream(
+                fis, output);
+        try {
+
+          ObjectInputStream ois = new ObjectInputStream(cipherInputStream);
+
+          key = (SecretKey) ois.readObject();
+
+        }
+        finally {
+          cipherInputStream.close();
+        }
+      }
+      finally {
+        fis.close();
+      }
+      _key = key;
+    }
+    // store key for the lifetime for the app
+    return key;
+
+  }
+
+  @SuppressWarnings("unchecked")
+  public HashMap<String, Object> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
+
+
+    try {
+      // obtain encrypted key
+      SecretKey key = getSecretKey(keyStore);
+
+      FileInputStream fis = openFileInput(SECURELOCALSTORAGEFILE);
+
+      if (fis != null) {
+
+        ArrayList<Byte> values = new ArrayList<Byte>();
+
+        try {
+
+          Cipher output = Cipher.getInstance("DES");
+
+          if (key != null) {
+            output.init(Cipher.DECRYPT_MODE, key);
+          }
+
+          CipherInputStream cipherInputStream = new CipherInputStream(
+                  fis, output);
+          try {
+
+            int nextByte;
+            while ((nextByte = cipherInputStream.read()) != -1) {
+              values.add((byte) nextByte);
+            }
+          }
+          finally {
+            cipherInputStream.close();
+          }
+        }
+        finally {
+          fis.close();
+        }
+
+        byte[] bytes = new byte[values.size()];
+        for (int i = 0; i < bytes.length; i++) {
+          bytes[i] = values.get(i);
+        }
+
+
+
+        HashMap<String, Object> hashMap;
+        ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
+        try {
+          hashMap = (HashMap<String, Object>) ois.readObject();
+        }
+        finally {
+          ois.close();
+        }
+        return hashMap;
+      } else {
+        return this.hashMap;
+      }
+
+    }
+    catch(Exception e) {
+      Log.e("SecureStorage","Write",e);
+      throw new SecureLocalStorageException("Error decrypting storage",e);
+    }
+  }
+
+  protected Context getContext() throws SecureLocalStorageException {
+    context = _cordova != null ? _cordova.getActivity().getBaseContext() : context;
+    if (context == null) {
+      throw new SecureLocalStorageException("The Android Context is required. Verify if the 'activity' or 'context' are passed by constructor");
+    }
+
+    return context;
+  }
+
+  private void checkEvents(JSONObject changedData) {
+
+    if (listeners.size() > 0) {
+      for (Object listener: listeners ) {
+
+        if (listener instanceof SecureLocalStorageListener) {
+
+          ((SecureLocalStorageListener) listener).onChange(this, changedData.optString("actionName"), changedData.optString("key"), changedData.opt("value"));
+        } else if (listener instanceof CallbackContext) {
+
+          PluginResult result = new PluginResult(PluginResult.Status.OK, changedData);
+          result.setKeepCallback(true);
+          ((CallbackContext) listener).sendPluginResult(result);
+        }
       }
     }
   }
@@ -1003,78 +1151,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
-  public SecretKey getSecretKey(KeyStore keyStore) throws
-          NoSuchAlgorithmException,
-          UnrecoverableEntryException,
-          KeyStoreException,
-          NoSuchPaddingException,
-          InvalidKeyException,
-          IOException,
-          ClassNotFoundException,
-          SecureLocalStorageException {
-
-    if (_key != null) {
-      return _key;
-    }
-
-    SecretKey key = null;
-    PrivateKey privateKey;
-
-    int android9Api = getAndroid9Api();
-
-    if (Build.VERSION.SDK_INT >= android9Api) {
-
-        // Use KeyStore to get PRIVATE key on Android 9+
-        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
-
-    } else {
-
-      KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
-
-      if (privateKeyEntry != null) {
-        privateKey = privateKeyEntry.getPrivateKey();
-      } else {
-        privateKey = (PrivateKey) keyStore.getKey(SECURELOCALSTORAGEALIAS, null);
-      }
-    }
-
-    FileInputStream fis = openFileInput(SECURELOCALSTORAGEKEY);
-
-    if (fis != null) {
-
-      try {
-
-        Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-
-        if (privateKey != null) {
-
-          output.init(Cipher.DECRYPT_MODE, privateKey);
-        }
-
-
-        CipherInputStream cipherInputStream = new CipherInputStream(
-                fis, output);
-        try {
-
-          ObjectInputStream ois = new ObjectInputStream(cipherInputStream);
-
-          key = (SecretKey) ois.readObject();
-
-        }
-        finally {
-          cipherInputStream.close();
-        }
-      }
-      finally {
-        fis.close();
-      }
-      _key = key;
-    }
-    // store key for the lifetime for the app
-    return key;
-
-  }
-
   /**
    * Get the Android 9 API number using reflection
    * This is great for use cordova-android 6.x or 7.x
@@ -1159,73 +1235,6 @@ public class SecureLocalStorage extends CordovaPlugin {
     } catch (Exception e) {
       Log.e("SecureStorage","Read",e);
       throw new SecureLocalStorageException("Error generating key", e);
-    }
-  }
-
-
-  @SuppressWarnings("unchecked")
-  public HashMap<String, Object> readAndDecryptStorage(KeyStore keyStore) throws SecureLocalStorageException {
-
-
-    try {
-      // obtain encrypted key
-      SecretKey key = getSecretKey(keyStore);
-
-      FileInputStream fis = openFileInput(SECURELOCALSTORAGEFILE);
-
-      if (fis != null) {
-
-        ArrayList<Byte> values = new ArrayList<Byte>();
-
-        try {
-
-          Cipher output = Cipher.getInstance("DES");
-
-          if (key != null) {
-            output.init(Cipher.DECRYPT_MODE, key);
-          }
-
-          CipherInputStream cipherInputStream = new CipherInputStream(
-                  fis, output);
-          try {
-
-            int nextByte;
-            while ((nextByte = cipherInputStream.read()) != -1) {
-              values.add((byte) nextByte);
-            }
-          }
-          finally {
-            cipherInputStream.close();
-          }
-        }
-        finally {
-          fis.close();
-        }
-
-        byte[] bytes = new byte[values.size()];
-        for (int i = 0; i < bytes.length; i++) {
-          bytes[i] = values.get(i);
-        }
-
-
-
-        HashMap<String, Object> hashMap;
-        ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes));
-        try {
-          hashMap = (HashMap<String, Object>) ois.readObject();
-        }
-        finally {
-          ois.close();
-        }
-        return hashMap;
-      } else {
-        return this.hashMap;
-      }
-
-    }
-    catch(Exception e) {
-      Log.e("SecureStorage","Write",e);
-      throw new SecureLocalStorageException("Error decrypting storage",e);
     }
   }
 

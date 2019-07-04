@@ -2,6 +2,9 @@ package nl.afas.cordova.plugin.secureLocalStorage.lib;
 
 import android.content.Context;
 
+import com.google.gson.JsonObject;
+
+import org.apache.cordova.CallbackContext;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
@@ -35,6 +38,7 @@ public class SecureLocalStorageTest {
 
     protected SecureLocalStorage secureLocalStorage;
     protected KeyStore keyStore;
+    protected CallbackContext callbackContext;
 
     class PojoTest {
 
@@ -62,10 +66,30 @@ public class SecureLocalStorageTest {
     public void setUp() {
 
         keyStore = mock(KeyStore.class);
+        callbackContext = mock(CallbackContext.class);
         Context context = mock(Context.class);
         SecretKey secretKey = mock(SecretKey.class);
 
         secureLocalStorage = SecureLocalStorage.getInstance(context, keyStore, secretKey);
+    }
+
+    /**
+     * Store a token using {@link SecureLocalStorage#handleAction(SecureLocalStorage.ActionId, JSONArray, CallbackContext)}
+     * method
+     * @throws Exception
+     */
+    @Test()
+    public void runHandleActionSetItem() throws Exception {
+
+        final String tokenToSave = "e1pN0yDS-Wk:APA91Ze4axvAHUWAK_GL6";
+
+        JSONArray params = new JSONArray()
+                .put(0, "token")
+                .put(1, tokenToSave);
+
+        boolean result = secureLocalStorage.handleAction(SecureLocalStorage.ActionId.ACTION_SETITEM, params, callbackContext);
+
+        assertTrue(result);
     }
 
     /**
