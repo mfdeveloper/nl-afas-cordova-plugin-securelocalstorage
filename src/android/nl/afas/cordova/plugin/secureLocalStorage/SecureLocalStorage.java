@@ -62,8 +62,10 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Security;
 import java.security.UnrecoverableEntryException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -126,11 +128,17 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   public SecureLocalStorage() {}
 
+  public SecureLocalStorage(Context context, SecretKey secretKey) {
+    this.context = context;
+    _key = secretKey;
+  }
+
   public SecureLocalStorage(Context context, KeyStore keyStore, SecretKey secretKey) {
     this.context = context;
     this.keyStore = keyStore;
     _key = secretKey;
   }
+
 
   private SecureLocalStorage(Context context) {
     this.context = context;
@@ -178,6 +186,16 @@ public class SecureLocalStorage extends CordovaPlugin {
 
     if (instance == null) {
       instance = new SecureLocalStorage(activity);
+      instance = getPlugin(instance);
+    }
+
+    return (SecureLocalStorage) instance;
+  }
+
+  public static synchronized SecureLocalStorage getInstance(Context context, SecretKey secretKey) {
+
+    if (instance == null) {
+      instance = new SecureLocalStorage(context, secretKey);
       instance = getPlugin(instance);
     }
 
@@ -1039,6 +1057,94 @@ public class SecureLocalStorage extends CordovaPlugin {
     }
   }
 
+  public void generateKey(KeyStore keyStore) throws SecureLocalStorageException {
+
+    if (keyStore != null) {
+      this.keyStore = keyStore;
+    }
+
+    try {
+      PublicKey publicKey = null;
+
+      SecretKey key = KeyGenerator.getInstance("DES").generateKey();
+      ByteArrayOutputStream bos = new ByteArrayOutputStream();
+
+      try {
+        ObjectOutputStream oos = new ObjectOutputStream(bos);
+        try {
+          oos.writeObject(key);
+        } finally {
+          oos.close();
+        }
+      } finally {
+        bos.close();
+      }
+
+      int android9Api = getAndroid9Api();
+      // store key encrypted with keystore key pair
+      if (Build.VERSION.SDK_INT >= android9Api) {
+
+        // Use KeyStore to get PUBLIC key on Android 9+
+        if(this.keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
+          Certificate cert  = this.keyStore.getCertificate(SECURELOCALSTORAGEALIAS);
+
+          if (cert != null) {
+
+            publicKey = cert.getPublicKey();
+          }
+        }
+      } else {
+
+        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) this.keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
+        if (privateKeyEntry != null) {
+          Certificate cert = privateKeyEntry.getCertificate();
+
+          if (cert != null) {
+            publicKey = cert.getPublicKey();
+          }
+
+        } else {
+
+          if(this.keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
+            Certificate cert  = this.keyStore.getCertificate(SECURELOCALSTORAGEALIAS);
+
+            if (cert != null) {
+
+              publicKey = cert.getPublicKey();
+            }
+          }
+        }
+      }
+
+      Cipher input = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+
+      if (publicKey != null) {
+        input.init(Cipher.ENCRYPT_MODE, publicKey);
+      }
+
+      FileOutputStream fos = openFileOutput(SECURELOCALSTORAGEKEY);
+
+      if (fos != null) {
+
+        try {
+          CipherOutputStream cipherOutputStream = new CipherOutputStream(
+                  fos, input);
+          try {
+            cipherOutputStream.write(bos.toByteArray());
+          } finally {
+            cipherOutputStream.close();
+          }
+        } finally {
+          fos.close();
+        }
+      }
+
+    } catch (Exception e) {
+      Log.e("SecureStorage","Read",e);
+      throw new SecureLocalStorageException("Error generating key", e);
+    }
+  }
+
   protected Context getContext() throws SecureLocalStorageException {
     context = _cordova != null ? _cordova.getActivity().getBaseContext() : context;
     if (context == null) {
@@ -1101,8 +1207,7 @@ public class SecureLocalStorage extends CordovaPlugin {
   @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
   private KeyStore initKeyStore() throws SecureLocalStorageException {
     try {
-      KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-      keyStore.load(null);
+      KeyStore keyStore =  KeyStoreManager.getSystemKeyStore(KeyStoreType.KEY_STORE);
 
       if (!keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
 
@@ -1119,6 +1224,14 @@ public class SecureLocalStorage extends CordovaPlugin {
                 .setStartDate(start.getTime())
                 .setEndDate(end.getTime())
                 .build();
+
+        /**
+         * @todo Refactor this to use a custom provider
+         *       with shadow class for KeyStoreManager.getKeyPairGenerator();
+         *       Until here, couldn't test this with Roboletric
+         *
+         * @see ShadowKeyStoreManager#getKeyPairGenerator()
+         */
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", "AndroidKeyStore");
         generator.initialize(spec);
 
@@ -1135,9 +1248,7 @@ public class SecureLocalStorage extends CordovaPlugin {
 
   private void checkValidity() throws SecureLocalStorageException {
     try {
-      KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-      keyStore.load(null);
-
+      KeyStore keyStore = KeyStoreManager.getSystemKeyStore(KeyStoreType.KEY_STORE);
 
       if (keyStore.containsAlias(SECURELOCALSTORAGEALIAS)) {
         Certificate c = keyStore.getCertificate(SECURELOCALSTORAGEALIAS);
@@ -1172,70 +1283,6 @@ public class SecureLocalStorage extends CordovaPlugin {
       Log.i("SecureStorage", e.getMessage());
     }
     return android9Value;
-  }
-
-  private void generateKey(KeyStore keyStore) throws SecureLocalStorageException {
-
-    try {
-      _key = null;
-      PublicKey publicKey = null;
-
-      SecretKey key = KeyGenerator.getInstance("DES").generateKey();
-      ByteArrayOutputStream bos = new ByteArrayOutputStream();
-      try {
-        ObjectOutputStream oos = new ObjectOutputStream(bos);
-        try {
-          oos.writeObject(key);
-        } finally {
-          oos.close();
-        }
-      } finally {
-        bos.close();
-      }
-
-      int android9Api = getAndroid9Api();
-      // store key encrypted with keystore key pair
-      if (Build.VERSION.SDK_INT >= android9Api) {
-
-        // Use KeyStore to get PUBLIC key on Android 9+
-        publicKey = keyStore.getCertificate(SECURELOCALSTORAGEALIAS).getPublicKey();
-      } else {
-
-        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(SECURELOCALSTORAGEALIAS, null);
-        if (privateKeyEntry != null) {
-          publicKey = privateKeyEntry.getCertificate().getPublicKey();
-        } else {
-          publicKey = keyStore.getCertificate(SECURELOCALSTORAGEALIAS).getPublicKey();
-        }
-      }
-
-      Cipher input = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-
-      if (publicKey != null) {
-        input.init(Cipher.ENCRYPT_MODE, publicKey);
-      }
-
-      FileOutputStream fos = openFileOutput(SECURELOCALSTORAGEKEY);
-
-      if (fos != null) {
-
-        try {
-          CipherOutputStream cipherOutputStream = new CipherOutputStream(
-                  fos, input);
-          try {
-            cipherOutputStream.write(bos.toByteArray());
-          } finally {
-            cipherOutputStream.close();
-          }
-        } finally {
-          fos.close();
-        }
-      }
-
-    } catch (Exception e) {
-      Log.e("SecureStorage","Read",e);
-      throw new SecureLocalStorageException("Error generating key", e);
-    }
   }
 
   private FileInputStream openFileInput(String fileName) throws SecureLocalStorageException {

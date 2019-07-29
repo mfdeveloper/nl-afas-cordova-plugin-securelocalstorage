@@ -1,22 +1,26 @@
 package nl.afas.cordova.plugin.secureLocalStorage.lib;
 
 import android.content.Context;
-
-import com.google.gson.JsonObject;
+import android.os.Build;
 
 import org.apache.cordova.CallbackContext;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import java.security.KeyStore;
 
 import javax.crypto.SecretKey;
 
+import nl.afas.cordova.plugin.secureLocalStorage.KeyStoreManager;
+import nl.afas.cordova.plugin.secureLocalStorage.KeyStoreType;
 import nl.afas.cordova.plugin.secureLocalStorage.SecureLocalStorage;
+import nl.afas.cordova.plugin.secureLocalStorage.lib.shadow.ShadowKeyStoreManager;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -32,7 +36,7 @@ import static org.mockito.Mockito.mock;
  * @see <a href="http://d.android.com/tools/testing">Testing documentation</a>
  * @see <a href="http://robolectric.org/getting-started/">Roboletric Getting Started</a>
  */
-@RunWith(RobolectricTestRunner.class)
+@RunWith(RobolectricTestRunner .class)
 public class SecureLocalStorageTest {
 
 
@@ -63,9 +67,10 @@ public class SecureLocalStorageTest {
     }
 
     @Before
-    public void setUp() {
+    @Config(shadows = ShadowKeyStoreManager.class)
+    public void setUp() throws Exception {
 
-        keyStore = mock(KeyStore.class);
+        keyStore = KeyStoreManager.getSystemKeyStore(KeyStoreType.DEFAULT);
         callbackContext = mock(CallbackContext.class);
         Context context = mock(Context.class);
         SecretKey secretKey = mock(SecretKey.class);
@@ -117,6 +122,22 @@ public class SecureLocalStorageTest {
 
         SecretKey secretKey = secureLocalStorage.getSecretKey(keyStore);
         assertNotNull(secretKey);
+    }
+
+    /**
+     * @todo Refactor this test to works with
+     *       {@link java.security.KeyPairGenerator#getInstance(String, String)}
+     *       Got Exception : "java.security.NoSuchAlgorithmException: no such algorithm: RSA for provider AndroidKeyStore"
+     *
+     * @throws Exception
+     */
+    @Config(sdk = Build.VERSION_CODES.P, shadows = ShadowKeyStoreManager.class)
+    @Test
+    @Ignore
+    public void generateKeyWithoutErrors() throws Exception {
+
+        secureLocalStorage.initEncryptStorage();
+        secureLocalStorage.generateKey(keyStore);
     }
 
     /**
